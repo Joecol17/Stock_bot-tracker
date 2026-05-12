@@ -1,2 +1,5 @@
+# HTTP requests for Trading 212 API
+requests>=2.31.0
+
 # No external Python dependencies required for the base system.
 # Install Ollama separately and make sure the `ollama` CLI is available in PATH.

@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Bot Tracker - Trading 212 Setup Guide</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 50px;
+        }
+        
+        .section h2 {
+            color: #667eea;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 25px;
+            border-radius: 8px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.1);
+        }
+        
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+        
+        .card p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+        
+        .card ul {
+            margin-left: 20px;
+            color: #555;
+            line-height: 1.8;
+        }
+        
+        .api-key-section {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 30px;
+            margin: 30px 0;
+        }
+        
+        .api-key-section h3 {
+            color: #ff6b6b;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        
+        .api-instructions {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .api-instructions h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .api-instructions p {
+            color: #555;
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+        
+        .step-list {
+            list-style: none;
+            counter-reset: step-counter;
+            margin: 15px 0;
+        }
+        
+        .step-list li {
+            counter-increment: step-counter;
+            margin-bottom: 15px;
+            padding-left: 40px;
+            position: relative;
+            color: #555;
+            line-height: 1.6;
+        }
+        
+        .step-list li:before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: -5px;
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        
+        .code-block {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        
+        .code-block code {
+            color: #abb2bf;
+        }
+        
+        .code-comment {
+            color: #5c6370;
+        }
+        
+        .code-string {
+            color: #98c379;
+        }
+        
+        .code-keyword {
+            color: #c678dd;
+        }
+        
+        .command {
+            background: #282c34;
+            color: #61afef;
+            padding: 10px 15px;
+            border-radius: 5px;
+            display: inline-block;
+            margin: 5px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .feature-item {
+            display: flex;
+            align-items: center;
+            color: #555;
+        }
+        
+        .feature-item:before {
+            content: "✓";
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            background: #28a745;
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 30px;
+            margin-right: 15px;
+            font-weight: bold;
+        }
+        
+        .warning {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        
+        .warning strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        
+        .config-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        .config-table th,
+        .config-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .config-table th {
+            background: #667eea;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .config-table tr:hover {
+            background: #f9f9f9;
+        }
+        
+        .config-table td:first-child {
+            font-weight: bold;
+            color: #667eea;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .footer {
+            background: #f8f9fa;
+            padding: 30px 40px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #ddd;
+        }
+        
+        .file-structure {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            color: #555;
+            line-height: 1.8;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+        
+        .tab-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background 0.3s;
+        }
+        
+        .tab-button:hover {
+            background: #5568d3;
+        }
+        
+        .tab-button.active {
+            background: #764ba2;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .highlight-yellow {
+            background-color: #ffeb3b;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                border-radius: 0;
+            }
+            
+            header {
+                padding: 20px;
+            }
+            
+            header h1 {
+                font-size: 1.8em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📈 Stock Bot Tracker</h1>
+            <p>AI-Powered Trading 212 Practice Account Integration</p>
+        </header>
+        
+        <div class="content">
+            <!-- API Keys Section -->
+            <div class="api-key-section">
+                <h3>🔑 Where API Keys Go</h3>
+                
+                <div class="api-instructions">
+                    <h4>📌 Trading 212 API Key</h4>
+                    <p><strong>What it is:</strong> Your authentication token for Trading 212 API</p>
+                    <p><strong>Where to get it:</strong></p>
+                    <ol class="step-list">
+                        <li>Go to <a href="https://trading212.com" target="_blank">https://trading212.com</a></li>
+                        <li>Create an account or log in</li>
+                        <li>Go to Settings → API</li>
+                        <li>Generate or copy your API key</li>
+                        <li>Keep it secret! Never share it</li>
+                    </ol>
+                </div>
+                
+                <div class="api-instructions">
+                    <h4>🖥️ Where to Set It (Windows)</h4>
+                    <p><strong>Option 1: Temporary (Current session only)</strong></p>
+                    <p>Open PowerShell and run:</p>
+                    <div class="code-block">
+$env:TRADING212_API_KEY = "your_actual_api_key_here"
+                    </div>
+                    
+                    <p style="margin-top: 20px;"><strong>Option 2: Permanent (Recommended)</strong></p>
+                    <ol class="step-list">
+                        <li>Right-click <span class="highlight-yellow">This PC</span> → <span class="highlight-yellow">Properties</span></li>
+                        <li>Click <span class="highlight-yellow">Advanced system settings</span></li>
+                        <li>Click <span class="highlight-yellow">Environment Variables</span> button</li>
+                        <li>Under "User variables" click <span class="highlight-yellow">New</span></li>
+                        <li>
+                            <strong>Variable name:</strong> <span class="command">TRADING212_API_KEY</span><br>
+                            <strong>Variable value:</strong> <span class="command">your_actual_api_key_here</span>
+                        </li>
+                        <li>Click <span class="highlight-yellow">OK</span> three times</li>
+                        <li>Close and reopen your terminal/PowerShell</li>
+                    </ol>
+                </div>
+                
+                <div class="api-instructions">
+                    <h4>✅ Verify It Works</h4>
+                    <p>Open PowerShell and run:</p>
+                    <div class="code-block">
+$env:TRADING212_API_KEY
+                    </div>
+                    <p>If set correctly, it will display your API key</p>
+                </div>
+            </div>
+            
+            <!-- Features Section -->
+            <div class="section">
+                <h2>🚀 Key Features</h2>
+                <div class="feature-list">
+                    <div class="feature-item">Practice Account Support</div>
+                    <div class="feature-item">AI Decision Engine</div>
+                    <div class="feature-item">Full Order Management</div>
+                    <div class="feature-item">Position Tracking</div>
+                    <div class="feature-item">Trade History Logging</div>
+                    <div class="feature-item">Risk Management</div>
+                    <div class="feature-item">Interactive CLI</div>
+                    <div class="feature-item">Automated Trading Bot</div>
+                </div>
+            </div>
+            
+            <!-- Quick Start Section -->
+            <div class="section">
+                <h2>⚡ Quick Start (5 Minutes)</h2>
+                
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchTab('step1')">Step 1: API Key</button>
+                    <button class="tab-button" onclick="switchTab('step2')">Step 2: Ollama</button>
+                    <button class="tab-button" onclick="switchTab('step3')">Step 3: Run</button>
+                </div>
+                
+                <div id="step1" class="tab-content active">
+                    <div class="card">
+                        <h3>Step 1️⃣ Set Your API Key</h3>
+                        <p><strong>In PowerShell:</strong></p>
+                        <div class="code-block">
+$env:TRADING212_API_KEY = "your_api_key_from_trading212"
+                        </div>
+                        <div class="success">
+                            <strong>✓ Tip:</strong> Make this permanent in System Environment Variables to avoid setting it every time
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="step2" class="tab-content">
+                    <div class="card">
+                        <h3>Step 2️⃣ Start Ollama</h3>
+                        <p><strong>Install Ollama first:</strong></p>
+                        <p><a href="https://ollama.ai" target="_blank">Download Ollama</a></p>
+                        <p><strong>Then run in a terminal:</strong></p>
+                        <div class="code-block">
+ollama serve
+                        </div>
+                        <p style="margin-top: 15px;"><strong>In another terminal, download the model:</strong></p>
+                        <div class="code-block">
+ollama pull llama2
+                        </div>
+                        <div class="success">
+                            <strong>✓ Keep this running</strong> while you use the trading system
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="step3" class="tab-content">
+                    <div class="card">
+                        <h3>Step 3️⃣ Run the System</h3>
+                        <p><strong>Run demo:</strong></p>
+                        <div class="code-block">
+python main.py
+                        </div>
+                        <p style="margin-top: 20px;"><strong>Or try interactive mode:</strong></p>
+                        <div class="code-block">
+python interactive.py
+                        </div>
+                        <p style="margin-top: 20px;"><strong>Or start automated bot:</strong></p>
+                        <div class="code-block">
+python auto_trader.py
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Configuration Section -->
+            <div class="section">
+                <h2>⚙️ Configuration Variables</h2>
+                <p>Set these environment variables to customize the system:</p>
+                
+                <table class="config-table">
+                    <thead>
+                        <tr>
+                            <th>Variable</th>
+                            <th>Default</th>
+                            <th>Purpose</th>
+                            <th>Example</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>TRADING212_API_KEY</td>
+                            <td style="color: #dc3545;">*(required)*</td>
+                            <td>Your Trading 212 API key</td>
+                            <td><span class="command">abc123xyz...</span></td>
+                        </tr>
+                        <tr>
+                            <td>TRADING212_DEMO_MODE</td>
+                            <td>true</td>
+                            <td>Use demo account (true/false)</td>
+                            <td><span class="command">true</span></td>
+                        </tr>
+                        <tr>
+                            <td>OLLAMA_MODEL</td>
+                            <td>llama2</td>
+                            <td>Ollama model name</td>
+                            <td><span class="command">llama2</span></td>
+                        </tr>
+                        <tr>
+                            <td>OLLAMA_TEMPERATURE</td>
+                            <td>0.2</td>
+                            <td>Decision consistency (0-1)</td>
+                            <td><span class="command">0.2</span></td>
+                        </tr>
+                        <tr>
+                            <td>DEFAULT_TRADE_QUANTITY</td>
+                            <td>1</td>
+                            <td>Shares per trade</td>
+                            <td><span class="command">1</span></td>
+                        </tr>
+                        <tr>
+                            <td>MAX_DAILY_TRADES</td>
+                            <td>10</td>
+                            <td>Maximum trades per day</td>
+                            <td><span class="command">10</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <p style="margin-top: 20px;"><strong>Set in PowerShell:</strong></p>
+                <div class="code-block">
+$env:TRADING212_DEMO_MODE = "true"
+$env:OLLAMA_MODEL = "llama2"
+$env:DEFAULT_TRADE_QUANTITY = "1"
+                </div>
+            </div>
+            
+            <!-- File Structure -->
+            <div class="section">
+                <h2>📁 Project Files</h2>
+                <p>Here's what each file does:</p>
+                
+                <div class="grid">
+                    <div class="card">
+                        <h3>main.py</h3>
+                        <p>🎬 Demo entry point. Shows all features in action.</p>
+                    </div>
+                    <div class="card">
+                        <h3>interactive.py</h3>
+                        <p>💬 Interactive menu. Manually trade and monitor positions.</p>
+                    </div>
+                    <div class="card">
+                        <h3>auto_trader.py</h3>
+                        <p>🤖 Automated bot. Continuously trades based on AI decisions.</p>
+                    </div>
+                    <div class="card">
+                        <h3>trading_system.py</h3>
+                        <p>⚙️ Core orchestrator connecting all components.</p>
+                    </div>
+                    <div class="card">
+                        <h3>trading212_client.py</h3>
+                        <p>🔗 API wrapper for Trading 212.</p>
+                    </div>
+                    <div class="card">
+                        <h3>order_executor.py</h3>
+                        <p>📊 Executes trades and manages orders.</p>
+                    </div>
+                    <div class="card">
+                        <h3>decision_system.py</h3>
+                        <p>🧠 Ollama AI decision engine.</p>
+                    </div>
+                    <div class="card">
+                        <h3>config.py</h3>
+                        <p>⚙️ Configuration management.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- How It Works Section -->
+            <div class="section">
+                <h2>🔄 How It Works</h2>
+                <p>The system combines AI analysis with automated trading in 3 steps:</p>
+                
+                <div style="background: #f8f9fa; padding: 30px; border-radius: 8px; margin: 20px 0;">
+                    <div style="display: flex; align-items: center; margin-bottom: 30px;">
+                        <div style="background: #667eea; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2em; margin-right: 20px;">1</div>
+                        <div>
+                            <h4 style="color: #667eea; margin-bottom: 5px;">📊 Market Analysis</h4>
+                            <p style="color: #555;">System gathers market context (price, trend, news, volume)</p>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; margin-bottom: 30px;">
+                        <div style="background: #667eea; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2em; margin-right: 20px;">2</div>
+                        <div>
+                            <h4 style="color: #667eea; margin-bottom: 5px;">🧠 AI Decision</h4>
+                            <p style="color: #555;">Ollama analyzes context and decides: BUY, SELL, or HOLD</p>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center;">
+                        <div style="background: #667eea; color: white; width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.2em; margin-right: 20px;">3</div>
+                        <div>
+                            <h4 style="color: #667eea; margin-bottom: 5px;">⚡ Trade Execution</h4>
+                            <p style="color: #555;">Order executor validates and executes the trade via Trading 212 API</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Safety & Warnings -->
+            <div class="section">
+                <h2>⚠️ Important Safety Information</h2>
+                
+                <div class="warning">
+                    <strong>🔒 Security</strong>
+                    <p>Never share your API key. Keep it secret!</p>
+                </div>
+                
+                <div class="warning">
+                    <strong>🧪 Always Test First</strong>
+                    <p>Use DEMO MODE (enabled by default) before any live trading. Virtual funds only.</p>
+                </div>
+                
+                <div class="warning">
+                    <strong>🤖 AI Decisions May Be Wrong</strong>
+                    <p>Verify decisions before executing. This is AI, not financial advice.</p>
+                </div>
+                
+                <div class="success">
+                    <strong>✓ Recommended Settings</strong>
+                    <ul style="margin-left: 20px; margin-top: 10px;">
+                        <li>Demo Mode: <span class="command">true</span> (practice only)</li>
+                        <li>Trade Quantity: <span class="command">1</span> share (start small)</li>
+                        <li>Max Daily Trades: <span class="command">5</span> (safety limit)</li>
+                        <li>Temperature: <span class="command">0.2</span> (consistent decisions)</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Troubleshooting -->
+            <div class="section">
+                <h2>🔧 Troubleshooting</h2>
+                
+                <div class="grid">
+                    <div class="card">
+                        <h3>API Key Error</h3>
+                        <p><strong>Problem:</strong> "TRADING212_API_KEY environment variable is required"</p>
+                        <p><strong>Solution:</strong></p>
+                        <div class="code-block">
+$env:TRADING212_API_KEY = "your_api_key"
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Ollama Not Found</h3>
+                        <p><strong>Problem:</strong> "Ollama query failed"</p>
+                        <p><strong>Solution:</strong></p>
+                        <div class="code-block">
+ollama serve
+                        </div>
+                        <p>Run in another terminal</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Model Not Found</h3>
+                        <p><strong>Problem:</strong> "Model llama2 not found"</p>
+                        <p><strong>Solution:</strong></p>
+                        <div class="code-block">
+ollama pull llama2
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Connection Error</h3>
+                        <p><strong>Problem:</strong> "API request failed"</p>
+                        <p><strong>Solution:</strong></p>
+                        <ul>
+                            <li>Check internet connection</li>
+                            <li>Verify Trading 212 API is up</li>
+                            <li>Check firewall settings</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Insufficient Funds</h3>
+                        <p><strong>Problem:</strong> "Insufficient free funds for trade"</p>
+                        <p><strong>Solution:</strong></p>
+                        <ul>
+                            <li>Check account balance</li>
+                            <li>Ensure demo mode is ON</li>
+                            <li>Reset demo account</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>No Positions</h3>
+                        <p><strong>Problem:</strong> "No open positions"</p>
+                        <p><strong>Solution:</strong></p>
+                        <ul>
+                            <li>You haven't bought anything yet</li>
+                            <li>Run a trade using interactive.py</li>
+                            <li>This is normal for new accounts</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Running the System -->
+            <div class="section">
+                <h2>🎮 Running the System</h2>
+                
+                <div class="card" style="margin-bottom: 20px;">
+                    <h3>Mode 1: Demo</h3>
+                    <p>Test everything with sample data</p>
+                    <div class="code-block">
+python main.py
+                    </div>
+                    <p style="margin-top: 15px;"><strong>Shows:</strong> Account status, AI decision, execution result, positions</p>
+                </div>
+                
+                <div class="card" style="margin-bottom: 20px;">
+                    <h3>Mode 2: Interactive</h3>
+                    <p>Menu-driven interface for manual trading</p>
+                    <div class="code-block">
+python interactive.py
+                    </div>
+                    <p style="margin-top: 15px;"><strong>Features:</strong> Analyze stocks, view positions, cancel orders, trade history</p>
+                </div>
+                
+                <div class="card">
+                    <h3>Mode 3: Automated</h3>
+                    <p>Continuous trading bot</p>
+                    <div class="code-block">
+python auto_trader.py
+                    </div>
+                    <p style="margin-top: 15px;"><strong>Features:</strong> Monitors symbols, executes trades, logs activity, respects limits</p>
+                </div>
+            </div>
+            
+            <!-- Next Steps -->
+            <div class="section">
+                <h2>📋 Next Steps</h2>
+                <ol class="step-list">
+                    <li><strong>Set your API key</strong> - Use System Environment Variables (permanent)</li>
+                    <li><strong>Install and start Ollama</strong> - Keep it running in background</li>
+                    <li><strong>Install dependencies</strong> - Run <span class="command">pip install -r requirements.txt</span></li>
+                    <li><strong>Run the demo</strong> - Execute <span class="command">python main.py</span></li>
+                    <li><strong>Try interactive mode</strong> - Run <span class="command">python interactive.py</span></li>
+                    <li><strong>Review the code</strong> - Understand how decisions are made</li>
+                    <li><strong>Test with small quantities</strong> - Start with 1 share</li>
+                    <li><strong>Monitor your trades</strong> - Check results in interactive mode</li>
+                    <li><strong>When confident, try automation</strong> - Run <span class="command">python auto_trader.py</span></li>
+                </ol>
+            </div>
+            
+        </div>
+        
+        <div class="footer">
+            <p><strong>Stock Bot Tracker</strong> | AI-Powered Trading 212 Integration</p>
+            <p style="margin-top: 10px; font-size: 0.9em;">
+                📖 <a href="https://github.com/Stock_bot-tracker" style="color: #667eea;">View on GitHub</a> | 
+                📚 <a href="#" style="color: #667eea;">Full Documentation</a> | 
+                💬 <a href="#" style="color: #667eea;">Support</a>
+            </p>
+            <p style="margin-top: 15px; color: #999; font-size: 0.85em;">
+                Trading involves risk. This is for educational purposes only. Not financial advice.
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        function switchTab(tabName) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => {
+                button.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
