@@ -1,5 +1,5 @@
-# HTTP requests for Trading 212 API
+# HTTP requests (Trading 212 API + Ollama REST API)
 requests>=2.31.0
 
-# No external Python dependencies required for the base system.
-# Install Ollama separately and make sure the `ollama` CLI is available in PATH.
+# Live market data (price, volume, trend, fundamentals)
+yfinance>=0.2.40
