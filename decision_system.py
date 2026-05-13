@@ -1,9 +1,10 @@
 import json
 import os
-import subprocess
+import requests
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
+OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_MODEL = "llama2"
 
 
@@ -13,52 +14,62 @@ class OllamaResult:
     prompt: str
     raw_text: str
     parsed: Optional[Dict[str, Any]]
-    exit_code: int
-    stderr: str
+    error: Optional[str]
 
 
 class OllamaClient:
-    """Simple client for a locally downloaded Ollama model."""
+    """Client for a locally running Ollama instance via REST API."""
 
     def __init__(
         self,
         model_name: Optional[str] = None,
         temperature: float = 0.2,
         max_tokens: int = 256,
+        base_url: str = OLLAMA_BASE_URL,
     ) -> None:
         self.model_name = model_name or os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
-        self.temperature = temperature
-        self.max_tokens = max_tokens
+        self.temperature = max(0.0, min(1.0, temperature))
+        self.max_tokens = max(1, max_tokens)
+        self.base_url = base_url.rstrip("/")
 
     def query(self, prompt: str, stop: Optional[Sequence[str]] = None) -> OllamaResult:
-        command: List[str] = [
-            "ollama",
-            "query",
-            self.model_name,
-            prompt,
-            "--temperature",
-            str(self.temperature),
-            "--max-tokens",
-            str(self.max_tokens),
-            "--json",
-        ]
-
+        payload: Dict[str, Any] = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature,
+                "num_predict": self.max_tokens,
+            },
+        }
         if stop:
-            # Ollama accepts multiple --stop options or a comma-separated list.
-            command.extend(["--stop", ",".join(stop)])
+            payload["options"]["stop"] = list(stop)
 
-        result = subprocess.run(command, capture_output=True, text=True)
-        raw_text = result.stdout.strip()
-        parsed = self._parse_json(raw_text)
-
-        return OllamaResult(
-            model=self.model_name,
-            prompt=prompt,
-            raw_text=raw_text,
-            parsed=parsed,
-            exit_code=result.returncode,
-            stderr=result.stderr.strip(),
-        )
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+            data = response.json()
+            raw_text = data.get("response", "").strip()
+            parsed = self._parse_json(raw_text)
+            return OllamaResult(
+                model=self.model_name,
+                prompt=prompt,
+                raw_text=raw_text,
+                parsed=parsed,
+                error=None,
+            )
+        except requests.exceptions.ConnectionError:
+            error = (
+                f"Cannot connect to Ollama at {self.base_url}. "
+                "Make sure Ollama is running: `ollama serve`"
+            )
+            return OllamaResult(model=self.model_name, prompt=prompt, raw_text="", parsed=None, error=error)
+        except requests.exceptions.RequestException as e:
+            return OllamaResult(model=self.model_name, prompt=prompt, raw_text="", parsed=None, error=str(e))
 
     @staticmethod
     def _parse_json(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -68,7 +79,7 @@ class OllamaClient:
         try:
             return json.loads(raw_text)
         except json.JSONDecodeError:
-            # Try to locate JSON inside a longer text response.
+            # Try to find a JSON object embedded in the response text.
             for line in raw_text.splitlines():
                 line = line.strip()
                 if line.startswith("{") and line.endswith("}"):
@@ -80,7 +91,7 @@ class OllamaClient:
 
 
 class DecisionEngine:
-    """Build decisions from context and a task prompt."""
+    """Build trading decisions from market context using a local LLM."""
 
     def __init__(self, client: OllamaClient) -> None:
         self.client = client
@@ -89,10 +100,8 @@ class DecisionEngine:
         prompt = self._build_prompt(context, question)
         result = self.client.query(prompt, stop=["\n\n"])
 
-        if result.exit_code != 0:
-            raise RuntimeError(
-                f"Ollama query failed (exit code={result.exit_code}): {result.stderr}"
-            )
+        if result.error:
+            raise RuntimeError(f"Ollama request failed: {result.error}")
 
         return {
             "model": result.model,
@@ -105,9 +114,11 @@ class DecisionEngine:
     def _build_prompt(context: Dict[str, Any], question: str) -> str:
         context_json = json.dumps(context, indent=2)
         return (
-            "You are a decision-making agent. Use the provided context to answer the question. "
-            "Return a JSON object with keys: action, reasoning, and details.\n\n"
+            "You are a stock trading decision agent. Analyse the context and answer the question.\n"
+            'Respond with a JSON object containing exactly these keys: "action" (one of BUY, SELL, HOLD), '
+            '"reasoning" (brief explanation), "details" (any extra notes).\n\n'
             f"Context:\n{context_json}\n\n"
             f"Question: {question}\n\n"
-            "Answer in valid JSON only."
+            "Answer in valid JSON only. Example: "
+            '{"action": "HOLD", "reasoning": "Price near resistance", "details": ""}'
         )
