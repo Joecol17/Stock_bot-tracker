@@ -149,13 +149,26 @@ if /i "%TRADING212_DEMO_MODE%"=="false" (
 set /p "confirm=Press ENTER to start the bot, or Ctrl+C to cancel..."
 
 :: ---------------------------------------------------------------
-:: 9. Run the bot
+:: 9. Start Mission Control dashboard server (background window)
 :: ---------------------------------------------------------------
 echo.
-echo Starting bot... (Press Ctrl+C to stop)
+echo Starting Mission Control dashboard...
+start "Mission Control" cmd /k "cd /d "%~dp0" && python api_server.py"
+
+:: Give Flask a moment to start before opening the browser
+timeout /t 2 /nobreak >nul
+start "" "http://localhost:5000"
+echo [OK] Dashboard opened at http://localhost:5000
+
+:: ---------------------------------------------------------------
+:: 10. Run the trading bot (this window)
+:: ---------------------------------------------------------------
+echo.
+echo Starting trading bot... (Press Ctrl+C to stop)
 echo.
 python auto_trader.py
 
 echo.
 echo Bot has stopped.
+echo The dashboard window will stay open - close it manually when done.
 pause

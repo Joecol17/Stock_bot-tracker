@@ -3,3 +3,7 @@ requests>=2.31.0
 
 # Live market data (price, volume, trend, fundamentals)
 yfinance>=0.2.40
+
+# Mission Control dashboard server
+flask>=3.0.0
+flask-cors>=4.0.0
