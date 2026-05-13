@@ -212,15 +212,16 @@ class AutoTradingBot:
 
 
 def main():
-    if not Config.TRADING212_API_KEY:
-        logger.error("TRADING212_API_KEY environment variable is required!")
-        logger.error('Set it: $env:TRADING212_API_KEY = "your_api_key"')
+    if not Config.TRADING212_API_KEY or not Config.TRADING212_API_SECRET:
+        logger.error("TRADING212_API_KEY and TRADING212_API_SECRET are both required!")
+        logger.error("Set them in your .env file.")
         return
 
     try:
         logger.info("Initializing Trading System...")
         system = TradingSystem(
             api_key=Config.TRADING212_API_KEY,
+            api_secret=Config.TRADING212_API_SECRET,
             ollama_model=Config.OLLAMA_MODEL,
             is_demo=Config.TRADING212_DEMO_MODE,
         )

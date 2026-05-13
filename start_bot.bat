@@ -28,7 +28,7 @@ for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
 echo [OK] Config loaded from .env
 
 :: ---------------------------------------------------------------
-:: 2. Check API key is set
+:: 2. Check API key and secret are set
 :: ---------------------------------------------------------------
 if "%TRADING212_API_KEY%"=="your_actual_api_key_here" (
     echo.
@@ -43,7 +43,20 @@ if "%TRADING212_API_KEY%"=="" (
     pause
     exit /b 1
 )
-echo [OK] API key found
+if "%TRADING212_API_SECRET%"=="your_actual_api_secret_here" (
+    echo.
+    echo [ERROR] You haven't set your Trading 212 API secret yet.
+    echo Open .env and replace "your_actual_api_secret_here" with your real secret.
+    echo.
+    pause
+    exit /b 1
+)
+if "%TRADING212_API_SECRET%"=="" (
+    echo [ERROR] TRADING212_API_SECRET is not set in .env
+    pause
+    exit /b 1
+)
+echo [OK] API key and secret found
 
 :: ---------------------------------------------------------------
 :: 3. Check Python is available

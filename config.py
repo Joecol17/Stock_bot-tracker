@@ -7,6 +7,7 @@ class Config:
 
     # Trading 212 API
     TRADING212_API_KEY: Optional[str] = os.getenv("TRADING212_API_KEY")
+    TRADING212_API_SECRET: Optional[str] = os.getenv("TRADING212_API_SECRET")
     TRADING212_DEMO_MODE: bool = os.getenv("TRADING212_DEMO_MODE", "true").lower() == "true"
 
     # Ollama Model
@@ -24,10 +25,14 @@ class Config:
     @classmethod
     def validate(cls) -> bool:
         """Validate that required configuration is set."""
+        ok = True
         if not cls.TRADING212_API_KEY:
-            print("Warning: TRADING212_API_KEY not set. Set it via environment variable.")
-            return False
-        return True
+            print("Warning: TRADING212_API_KEY not set.")
+            ok = False
+        if not cls.TRADING212_API_SECRET:
+            print("Warning: TRADING212_API_SECRET not set.")
+            ok = False
+        return ok
 
     @classmethod
     def print_config(cls) -> None:

@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 import requests
@@ -62,12 +63,16 @@ class Trading212Client:
     _MAX_RETRIES = 3
     _RETRY_BACKOFF = 5  # seconds between retries
 
-    def __init__(self, api_key: str, is_demo: bool = True):
+    def __init__(self, api_key: str, api_secret: str, is_demo: bool = True):
         self.api_key = api_key
+        self.api_secret = api_secret
         self.is_demo = is_demo
         self.base_url = self.DEMO_BASE_URL if is_demo else self.LIVE_BASE_URL
+
+        # Trading 212 uses HTTP Basic Auth: Base64(api_key:api_secret)
+        credentials = base64.b64encode(f"{api_key}:{api_secret}".encode()).decode()
         self.headers = {
-            "Authorization": api_key,
+            "Authorization": f"Basic {credentials}",
             "Content-Type": "application/json",
         }
 

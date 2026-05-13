@@ -20,25 +20,28 @@ class TradingSystem:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
         ollama_model: Optional[str] = None,
         is_demo: bool = True,
     ):
         """
         Initialize the trading system.
-        
+
         Args:
             api_key: Trading 212 API key (uses env var if not provided)
+            api_secret: Trading 212 API secret (uses env var if not provided)
             ollama_model: Ollama model to use for decisions
             is_demo: Use demo/practice account (default: True)
         """
-        # Load API key from env if not provided
         if not api_key:
-            api_key = load_api_key_from_env()
-        
+            api_key = load_api_key_from_env("TRADING212_API_KEY")
+        if not api_secret:
+            api_secret = load_api_key_from_env("TRADING212_API_SECRET")
+
         # Initialize components
         self.ollama_client = OllamaClient(model_name=ollama_model)
         self.decision_engine = DecisionEngine(self.ollama_client)
-        self.trading_client = Trading212Client(api_key, is_demo=is_demo)
+        self.trading_client = Trading212Client(api_key, api_secret, is_demo=is_demo)
         self.executor = OrderExecutor(self.trading_client)
         
         self.is_demo = is_demo
