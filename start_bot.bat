@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 title Stock Trading Bot
 
+:: Always run from the folder this .bat file lives in
+cd /d "%~dp0"
+
 echo ============================================================
 echo  Stock Trading Bot - Starting Up
 echo ============================================================
