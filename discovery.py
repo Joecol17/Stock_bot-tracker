@@ -31,19 +31,19 @@ BUILTIN_UNIVERSE = [
     "CRM", "ORCL", "SAP", "INTU", "ADBE", "NOW", "WDAY", "SNOW",
     "PLTR", "NET", "DDOG", "ZS", "CRWD", "OKTA", "MDB", "TEAM",
     # Consumer
-    "NFLX", "DIS", "CMCSA", "CHTR", "PARA", "WBD", "SPOT",
+    "NFLX", "DIS", "CMCSA", "CHTR", "WBD", "SPOT",
     "AMZN", "HD", "LOW", "TGT", "WMT", "COST", "MCD", "SBUX",
     "NKE", "LULU", "TJX", "ROST", "YUM", "CMG",
     # Finance
     "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "SCHW",
-    "AXP", "V", "MA", "PYPL", "SQ", "COF", "USB", "PNC",
+    "AXP", "V", "MA", "PYPL", "COF", "USB", "PNC",
     "BX", "KKR", "APO", "ARES",
     # Healthcare
     "JNJ", "UNH", "LLY", "PFE", "MRK", "ABBV", "TMO", "ABT",
     "DHR", "MDT", "SYK", "BSX", "ISRG", "EW", "IDXX",
     "REGN", "VRTX", "BIIB", "GILD", "AMGN",
     # Energy
-    "XOM", "CVX", "COP", "SLB", "EOG", "PXD", "MPC", "PSX",
+    "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX",
     "VLO", "OXY", "HAL", "BKR",
     # Industrials / Materials
     "CAT", "DE", "HON", "GE", "RTX", "LMT", "NOC", "BA",

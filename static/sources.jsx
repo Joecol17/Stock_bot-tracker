@@ -256,11 +256,12 @@ const SourceDetail = ({ source, history }) => {
 };
 
 const SamplePacket = ({ kind }) => {
+  const D = window.BotData;
   if (kind === "ai") return (
     <>
-      <span className="k-key">$</span> ollama query llama2 --temperature 0.2 \{"\n"}
+      <span className="k-key">$</span> ollama query {D.model || "llama2"} --temperature {D.temperature || 0.2} \{"\n"}
       {"   "}<span className="k-str">"You are a decision-making agent..."</span>{"\n"}{"\n"}
-      <span className="k-key">→ response</span> in <span className="k-num">847ms</span>{"\n"}
+      <span className="k-key">response</span> in <span className="k-num">847ms</span>{"\n"}
       {"{"}{"\n"}
       {"  "}<span className="k-key">"action"</span>: <span className="k-str">"BUY"</span>,{"\n"}
       {"  "}<span className="k-key">"reasoning"</span>: <span className="k-str">"uptrend confirmed"</span>,{"\n"}
@@ -273,10 +274,9 @@ const SamplePacket = ({ kind }) => {
       <span className="k-key">GET</span> /api/v0/equity/account{"\n"}
       <span className="k-key">200 OK</span> · 38ms{"\n"}
       {"{"}{"\n"}
-      {"  "}<span className="k-key">"id"</span>: <span className="k-num">88412</span>,{"\n"}
-      {"  "}<span className="k-key">"cash"</span>: <span className="k-num">4127.84</span>,{"\n"}
+      {"  "}<span className="k-key">"cash"</span>: <span className="k-num">{(D.cash||D.free_funds||0).toFixed(2)}</span>,{"\n"}
       {"  "}<span className="k-key">"currency"</span>: <span className="k-str">"USD"</span>,{"\n"}
-      {"  "}<span className="k-key">"demo"</span>: <span className="k-num">true</span>{"\n"}
+      {"  "}<span className="k-key">"demo"</span>: <span className="k-num">{D.mode === "LIVE" ? "false" : "true"}</span>{"\n"}
       {"}"}
     </>
   );
@@ -299,10 +299,10 @@ const SamplePacket = ({ kind }) => {
   );
   return (
     <>
-      <span className="k-key">DEFAULT_TRADE_QUANTITY</span> = <span className="k-num">1</span>{"\n"}
-      <span className="k-key">MAX_DAILY_TRADES</span> = <span className="k-num">10</span>{"\n"}
-      <span className="k-key">MIN_ACCOUNT_VALUE</span> = <span className="k-num">100</span>{"\n"}
-      <span className="k-key">TRADING212_DEMO_MODE</span> = <span className="k-num">true</span>
+      <span className="k-key">MAX_DAILY_TRADES</span> = <span className="k-num">{D.max_daily_trades || 10}</span>{"\n"}
+      <span className="k-key">MIN_ACCOUNT_VALUE</span> = <span className="k-num">{D.min_account_value || 100}</span>{"\n"}
+      <span className="k-key">STOP_LOSS_PCT</span> = <span className="k-num">0.03</span>{"\n"}
+      <span className="k-key">TRADING212_DEMO_MODE</span> = <span className="k-num">{D.mode === "LIVE" ? "false" : "true"}</span>
     </>
   );
 };
@@ -332,8 +332,8 @@ const SourcesPage = () => {
       <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
         <MiniStat label="Sources live"      value={`${liveCount}/${D.sources.length}`}   sub="all regions reporting" tone="pos" icon={<I.Server/>}/>
         <MiniStat label="Avg latency"       value={`${avgLatency}`} unit="ms" sub="rolling 60s" tone={avgLatency < 150 ? "pos" : "warn"} icon={<I.Bolt/>}/>
-        <MiniStat label="Throughput"        value="2.4k"  unit="events/min"   sub="across 8 endpoints" tone="info" icon={<I.Chart/>}/>
-        <MiniStat label="AI engine"         value="6"     unit="ms"           sub="llama2 · local"     tone="accent" icon={<I.Cpu/>}/>
+        <MiniStat label="Throughput"        value={D.cycle > 0 ? String(D.cycle * 5) : "—"}  unit="decisions"   sub={`${D.cycle || 0} cycles run`} tone="info" icon={<I.Chart/>}/>
+        <MiniStat label="AI engine"         value={D.bot_status === "running" ? "live" : "idle"} sub={`${D.model || "llama2"} · local`} tone="accent" icon={<I.Cpu/>}/>
       </div>
 
       {/* MAP + DETAIL */}

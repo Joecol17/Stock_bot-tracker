@@ -160,7 +160,7 @@ class Screener:
         result += ranked[:remaining_slots]
 
         logger.info(
-            f"Screener: {len(symbols)} symbols → {len(result)} selected "
+            f"Screener: {len(symbols)} symbols -> {len(result)} selected "
             f"(scores: {', '.join(f'{s}={scores.get(s, 0):.0f}' for s in result)})"
         )
         return result

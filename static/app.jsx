@@ -59,12 +59,12 @@ const App = () => {
 
         <div className="side-foot">
           <div className="bot-status">
-            <span className="dot"/>
-            <span>Bot <b style={{ color: "var(--text)" }}>RUNNING</b></span>
+            <span className="dot" style={{ background: D.bot_status === "running" ? "var(--pos)" : "var(--text-dim)", boxShadow: D.bot_status === "running" ? "0 0 0 3px oklch(74% 0.16 148 / .18)" : "none", animation: D.bot_status === "running" ? undefined : "none" }}/>
+            <span>Bot <b style={{ color: D.bot_status === "running" ? "var(--pos)" : "var(--text-mute)" }}>{(D.bot_status || "idle").toUpperCase()}</b></span>
           </div>
           <div className="bot-status">
             <span className="dot" style={{ background: "var(--info)", boxShadow: "0 0 0 3px oklch(72% 0.13 230 / .18)" }}/>
-            <span>{model} · t=0.2</span>
+            <span>{model} · t={D.temperature || 0.2}</span>
           </div>
           <div className="bot-status">
             <span className="dot" style={{ background: isLive ? "var(--pos)" : "var(--accent)", boxShadow: isLive ? "0 0 0 3px oklch(74% 0.16 148 / .18)" : "0 0 0 3px oklch(78% 0.14 70 / .18)" }}/>

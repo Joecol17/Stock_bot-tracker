@@ -153,7 +153,37 @@ def api_botdata():
         "total_value": 0,
         "mode": "DEMO" if Config.TRADING212_DEMO_MODE else "LIVE",
         "model": Config.OLLAMA_MODEL,
+        # Config values for UI
+        "temperature": Config.OLLAMA_TEMPERATURE,
+        "max_tokens": Config.OLLAMA_MAX_TOKENS,
+        "min_account_value": Config.MIN_ACCOUNT_VALUE,
+        "max_daily_trades": Config.MAX_DAILY_TRADES,
+        "cycle_interval": 300,
+        # Bot state (from bot_state.json written by auto_trader.py)
+        "bot_status": "idle",
+        "cycle": 0,
+        "step": 0,
+        "step_name": "idle",
+        "current_symbol": "",
+        "uptime_seconds": 0,
+        "last_cycle_time": "",
+        "avg_confidence": 0.0,
     }
+
+    # Read bot state written by auto_trader.py
+    if os.path.exists("bot_state.json"):
+        try:
+            with open("bot_state.json") as f:
+                bs = json.load(f)
+            result["bot_status"]    = bs.get("status", "idle")
+            result["cycle"]         = bs.get("cycle", 0)
+            result["step"]          = bs.get("step", 0)
+            result["step_name"]     = bs.get("step_name", "idle")
+            result["current_symbol"] = bs.get("current_symbol", "")
+            result["uptime_seconds"] = bs.get("uptime_seconds", 0)
+            result["last_cycle_time"] = bs.get("last_updated", "")
+        except Exception:
+            pass
 
     # Account status & positions
     system = _get_system()
@@ -238,6 +268,10 @@ def api_botdata():
             "reason": t.get("message", ""),
             "context": {},
         })
+
+    # Avg confidence (decisions that have it)
+    conf_vals = [d["confidence"] for d in result["decisions"] if d["confidence"] > 0]
+    result["avg_confidence"] = round(sum(conf_vals) / len(conf_vals), 2) if conf_vals else 0.0
 
     # Activity feed (last 10)
     for t in list(reversed(trades))[:10]:

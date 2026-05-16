@@ -19,6 +19,19 @@ window.BotData = {
   total_value: 0,
   mode: "DEMO",
   model: "llama2",
+  temperature: 0.2,
+  max_tokens: 256,
+  min_account_value: 100,
+  max_daily_trades: 10,
+  cycle_interval: 300,
+  bot_status: "idle",
+  cycle: 0,
+  step: 0,
+  step_name: "idle",
+  current_symbol: "",
+  uptime_seconds: 0,
+  last_cycle_time: "",
+  avg_confidence: 0,
 };
 
 async function _fetchBotData() {

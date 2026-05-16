@@ -3,6 +3,7 @@ Automated trading loop - continuously monitors and trades based on market analys
 Uses Ollama for decision-making and Trading 212 API for execution.
 """
 
+import json
 import time
 import logging
 from datetime import datetime
@@ -188,6 +189,30 @@ class AutoTradingBot:
         self.trade_count = 0
         self.error_count = 0
         self._cycle_count = 0
+        self._started_at = datetime.now().isoformat()
+        self._write_state(0, "idle")
+
+    def _write_state(self, step: int, step_name: str, current_symbol: str = "") -> None:
+        """Write bot state to bot_state.json for the dashboard to read."""
+        try:
+            started = datetime.fromisoformat(self._started_at)
+            uptime = int((datetime.now() - started).total_seconds())
+            state = {
+                "status": "running" if self.is_running else ("idle" if step == 0 else "stopped"),
+                "cycle": self._cycle_count,
+                "step": step,
+                "step_name": step_name,
+                "current_symbol": current_symbol,
+                "started_at": self._started_at,
+                "last_updated": datetime.now().isoformat(),
+                "uptime_seconds": uptime,
+                "trade_count": self.trade_count,
+                "error_count": self.error_count,
+            }
+            with open("bot_state.json", "w") as f:
+                json.dump(state, f)
+        except Exception:
+            pass
 
     def analyze_symbol(self, symbol: str) -> bool:
         """Analyse one symbol and execute a trade if appropriate. Returns True if a trade ran."""
@@ -199,6 +224,7 @@ class AutoTradingBot:
                 logger.warning(f"Skipping {symbol}: no live price data available")
                 return False
 
+            self._write_state(4, "Ollama decide", symbol)
             result = self.system.analyze_and_trade(
                 symbol=symbol,
                 context=context,
@@ -207,6 +233,7 @@ class AutoTradingBot:
 
             exec_result = result['execution']
             action = exec_result['action']
+            self._write_state(5, "Execute order", symbol)
             if exec_result['success'] and action in ("BUY", "SELL"):
                 logger.info(f"  {symbol}: {action} - {exec_result['message']}")
                 self.trade_count += 1
@@ -241,6 +268,7 @@ class AutoTradingBot:
         logger.info(f"Cycle started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
         # Check stop-loss / take-profit before analysing new signals
+        self._write_state(1, "Risk exits")
         exits = self.system.check_risk_exits()
         for exit_result in exits:
             logger.info(f"  [RISK EXIT] {exit_result.message}")
@@ -275,6 +303,7 @@ class AutoTradingBot:
                 self.notifier.discovery_update(added, len(self.watchlist.list_symbols()))
 
         # Screen the watchlist down to the most active symbols this cycle
+        self._write_state(2, "Screener")
         tracked = list(self.system.get_tracked_positions().keys())
         symbols = self.screener.top_symbols(
             self.watchlist.list_symbols(),
@@ -285,6 +314,7 @@ class AutoTradingBot:
 
         trades_this_cycle = len(exits)
         for symbol in symbols:
+            self._write_state(3, "Fetch context", symbol)
             if self.analyze_symbol(symbol):
                 trades_this_cycle += 1
             time.sleep(1)  # small gap to avoid API rate limits
@@ -304,6 +334,7 @@ class AutoTradingBot:
                 is_demo=self.system.is_demo,
             )
 
+        self._write_state(0, "idle")
         logger.info(
             f"Cycle done. This cycle: {trades_this_cycle} trades | "
             f"Total: {self.trade_count} | Errors: {self.error_count}"
