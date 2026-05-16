@@ -305,6 +305,118 @@ def api_orders():
 
 
 # ---------------------------------------------------------------------------
+# API — config (read / write .env)
+# ---------------------------------------------------------------------------
+
+_ENV_FILE = os.path.join(os.path.dirname(__file__), ".env")
+
+# Keys that are safe to expose and edit via the dashboard
+_EDITABLE_KEYS = {
+    "OLLAMA_MODEL", "OLLAMA_TEMPERATURE", "OLLAMA_MAX_TOKENS",
+    "TRADING212_DEMO_MODE",
+    "DEFAULT_TRADE_QUANTITY", "MAX_DAILY_TRADES", "MIN_ACCOUNT_VALUE",
+    "STOP_LOSS_PCT", "TAKE_PROFIT_PCT",
+    "MAX_SYMBOLS_PER_CYCLE", "DISCOVERY_INTERVAL_CYCLES",
+    "DISCOVERY_TOP_N", "MAX_WATCHLIST_SIZE",
+}
+
+# Keys that may be set but should be masked in the response
+_SECRET_KEYS = {"TRADING212_API_KEY"}
+
+
+def _read_env_file() -> Dict[str, str]:
+    pairs: Dict[str, str] = {}
+    if not os.path.exists(_ENV_FILE):
+        return pairs
+    with open(_ENV_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            pairs[k.strip()] = v.strip()
+    return pairs
+
+
+def _write_env_file(updates: Dict[str, str]) -> None:
+    lines: list = []
+    seen: set = set()
+    if os.path.exists(_ENV_FILE):
+        with open(_ENV_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+    new_lines: list = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            new_lines.append(line)
+            continue
+        k = stripped.split("=", 1)[0].strip()
+        if k in updates:
+            new_lines.append(f"{k}={updates[k]}\n")
+            seen.add(k)
+        else:
+            new_lines.append(line)
+
+    # Append any keys that weren't already in the file
+    for k, v in updates.items():
+        if k not in seen:
+            new_lines.append(f"{k}={v}\n")
+
+    with open(_ENV_FILE, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    env = _read_env_file()
+    result: Dict[str, Any] = {}
+    for k in _EDITABLE_KEYS:
+        result[k] = env.get(k, "")
+    for k in _SECRET_KEYS:
+        result[k] = "***" if env.get(k) else ""
+    result["api_key_set"] = bool(env.get("TRADING212_API_KEY"))
+    return jsonify(result)
+
+
+@app.route("/api/config", methods=["POST"])
+def api_config_post():
+    data: Dict[str, Any] = request.json or {}
+    updates: Dict[str, str] = {}
+
+    for k, v in data.items():
+        if k in _EDITABLE_KEYS:
+            updates[k] = str(v).strip()
+        elif k == "TRADING212_API_KEY" and v and v != "***":
+            updates[k] = str(v).strip()
+
+    if not updates:
+        return jsonify({"error": "no valid keys provided"}), 400
+
+    try:
+        _write_env_file(updates)
+        return jsonify({"ok": True, "updated": list(updates.keys())})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# API — Ollama model list
+# ---------------------------------------------------------------------------
+
+@app.route("/api/ollama/models")
+def api_ollama_models():
+    import urllib.request
+    try:
+        req = urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3)
+        data = json.loads(req.read())
+        models = [m["name"] for m in data.get("models", [])]
+        return jsonify({"models": models, "ok": True})
+    except Exception as e:
+        return jsonify({"models": [], "ok": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
