@@ -1,276 +1,359 @@
-# Stock Bot Tracker - AI-Powered Trading System
+# Stock Bot Tracker — Mission Control Dashboard
 
-A comprehensive trading system that combines Ollama AI decision-making with the Trading 212 API to automatically analyze markets and execute trades on a practice account.
+An AI-powered automated trading system with a real-time web dashboard ("Mission Control").
+The bot uses a local Ollama LLM for BUY/SELL/HOLD decisions, Trading 212 for order execution,
+and yfinance + ta for live market data and technical indicators.
 
-## Overview
+---
 
-This system provides:
-- **AI Decision Engine**: Uses Ollama (llama2, etc.) to analyze market context and make trading decisions
-- **Trading 212 Integration**: Full API integration for order execution, position tracking, and account management
-- **Practice Account Support**: Safe testing with demo/virtual funds
-- **Multiple Trading Modes**: Demo analysis, interactive trading, or fully automated bot
+## Current State (as of 2026-05-16)
 
-## Features
+### What is fully built and working
 
-✓ **AI-Powered Analysis** - Ollama decision engine analyzes market context  
-✓ **Practice Trading** - Demo account support (no real money risk)  
-✓ **Full Order Management** - Buy, sell, limit, stop orders  
-✓ **Position Tracking** - Real-time position and P/L monitoring  
-✓ **Trade History** - Complete logging of all trades  
-✓ **Risk Management** - Insufficient funds checks, position validation  
-✓ **Multiple Interfaces** - CLI, interactive, and automated modes  
+| Area | Status | Notes |
+|------|--------|-------|
+| Web dashboard (Flask) | ✅ Working | `python dashboard.py` → http://localhost:5000 |
+| Mission Control UI (React) | ✅ Working | Overview, Data Sources, Trades pages all live |
+| AI Engine setup page | ✅ Working | Model picker from Ollama, temperature/tokens sliders, saves to .env |
+| Broker setup page | ✅ Working | API key input, demo/live toggle, account stats, test connection |
+| Risk & Config setup page | ✅ Working | All trading parameters with sliders, saves to .env |
+| Bot pipeline display | ✅ Working | Shows real step (from bot_state.json), idle state shows all steps clearly |
+| Live BotData bridge | ✅ Working | Polls /api/botdata every 30s, fires `botdatarefreshed` event |
+| start_bot.bat | ✅ Working | Single launcher: checks Python, installs deps, starts Ollama, opens dashboard |
+| Auto trader bot | ✅ Working | Writes bot_state.json at each step for real-time pipeline display |
+| Ollama integration | ✅ Working | Uses `llama3.2:latest` (configured in .env) |
+| yfinance + ta indicators | ✅ Working | RSI, MACD, SMA, Bollinger Bands, volume, support/resistance |
+| Discord notifications | ✅ Working | 5 webhooks: trades, risk, portfolio, discovery, alerts |
+| Watchlist + screener | ✅ Working | Auto-discovery, top-N scoring, SL/TP tracking |
+| Trade history logging | ✅ Working | `trade_history.json` persists all non-HOLD trades |
 
-## Quick Start
+### Known issue — CRITICAL (must fix first)
 
-### 1. Installation
+**Trading 212 API → 401 Unauthorized on every call.**
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Set your Trading 212 API key (Windows PowerShell)
-$env:TRADING212_API_KEY = "your_api_key"
-
-# Make sure Ollama is running
-ollama serve
+Every BUY/SELL attempt fails with:
+```
+API request failed: 401 Client Error: Unauthorized for url: https://demo.trading212.com/api/v0/equity/account/cash
 ```
 
-### 2. Run Demo
+**Cause:** The API key in `.env` (`TRADING212_API_KEY`) is either:
+- A Live account key being used with `TRADING212_DEMO_MODE=true` (hits the demo endpoint)
+- Expired or revoked
 
-```bash
-python main.py
-```
+**Fix:**
+1. Open Trading 212 app → switch to **Demo/Practice account**
+2. Settings → API → generate/copy the **Demo account API key**
+3. Go to dashboard → Broker page (sidebar key 5) → paste new key → Save
+4. Or edit `.env` directly: `TRADING212_API_KEY=<new key>`
+5. Restart `start_bot.bat`
 
-This will:
-- Check your account status
-- Analyze Apple stock
-- Make a trading decision
-- Display positions and execution results
+Note: Trading 212 has separate API keys for Demo and Live accounts. Do not mix them.
 
-### 3. Interactive Mode
+---
 
-```bash
-python interactive.py
-```
+## How to Start Everything
 
-Interactive menu with options to:
-- Analyze and trade specific stocks
-- View account status and positions
-- Manage orders
-- View trade history
+### Quickest way
+Double-click `start_bot.bat` in the project root. It will:
+1. Check Python is installed
+2. `pip install -r requirements.txt`
+3. Load `.env` variables
+4. Start Ollama (if `ollama.exe` is on PATH)
+5. Open the dashboard in a new window and launch the browser
+6. Run `auto_trader.py` in the foreground
 
-### 4. Automated Trading
+### Manual start
+```powershell
+# Terminal 1 — dashboard
+python dashboard.py
+# Then open http://localhost:5000
 
-```bash
+# Terminal 2 — bot
 python auto_trader.py
 ```
 
-Continuously monitors symbols and executes trades based on AI analysis.
+---
 
-## Configuration
-
-Set environment variables to customize behavior:
-
-```powershell
-# Trading 212
-$env:TRADING212_API_KEY = "your_api_key"          # Required
-$env:TRADING212_DEMO_MODE = "true"                # Use demo account (default: true)
-
-# Ollama
-$env:OLLAMA_MODEL = "llama2"                       # Model name (default: llama2)
-$env:OLLAMA_TEMPERATURE = "0.2"                    # 0.0-1.0, lower = more consistent
-$env:OLLAMA_MAX_TOKENS = "256"                     # Max response length
-
-# Trading Parameters
-$env:DEFAULT_TRADE_QUANTITY = "1"                  # Shares per trade
-$env:MAX_DAILY_TRADES = "10"                       # Safety limit
-$env:MIN_ACCOUNT_VALUE = "100"                     # Minimum account value
-```
-
-## Architecture
-
-### Core Components
-
-```
-trading_system.py          - Main orchestrator
-├── decision_system.py     - Ollama decision engine
-├── trading212_client.py   - API client
-└── order_executor.py      - Order execution
-```
-
-### File Structure
+## Project File Map
 
 ```
 Stock_bot-tracker/
-├── main.py                # Demo entry point
-├── interactive.py         # Interactive CLI
-├── auto_trader.py         # Automated trading bot
-├── trading_system.py      # Core trading system
-├── trading212_client.py   # Trading 212 API wrapper
-├── order_executor.py      # Order execution engine
-├── decision_system.py     # Ollama decision engine
-├── config.py              # Configuration management
-├── requirements.txt       # Dependencies
-├── SETUP.md              # Detailed setup guide
-└── README.md             # This file
+│
+├── start_bot.bat              ← MAIN LAUNCHER — double-click to start everything
+│
+├── .env                       ← ALL configuration (API keys, model, risk params)
+│                                  DO NOT commit real keys to git
+│
+├── auto_trader.py             ← The trading bot loop
+│                                  Writes bot_state.json at every pipeline step
+│                                  Reads Config → calls TradingSystem → logs results
+│
+├── dashboard.py               ← Flask web server (port 5000)
+│                                  Serves the React UI from /static/
+│                                  API routes: /api/botdata, /api/config,
+│                                              /api/status, /api/trades,
+│                                              /api/watchlist, /api/orders,
+│                                              /api/ollama/models
+│
+├── trading_system.py          ← Main orchestrator class TradingSystem
+│                                  Connects DecisionEngine + Trading212Client + OrderExecutor
+│
+├── trading212_client.py       ← Trading 212 REST API client
+│                                  Supports demo (demo.trading212.com) and live
+│                                  Uses Authorization header (no Bearer prefix)
+│
+├── order_executor.py          ← Translates AI decisions into T212 orders
+│                                  Maintains in-memory SL/TP tracking per position
+│                                  Writes to trade_history.json
+│
+├── decision_system.py         ← Ollama LLM wrapper
+│                                  Sends market context as JSON prompt
+│                                  Parses BUY/SELL/HOLD + confidence from response
+│
+├── watchlist.py               ← WatchlistManager (watchlist.json) + Screener
+│                                  Screener scores symbols by volume/momentum
+│
+├── discovery.py               ← Auto-discovers new watchlist candidates
+│                                  Uses predefined universe + yfinance screening
+│                                  Removed delisted: PARA, PXD, SQ
+│
+├── config.py                  ← All config as class attributes, loaded from .env
+│
+├── notifier.py                ← Discord webhook notifications
+│                                  Channels: trades, risk, portfolio, discovery, alerts
+│
+├── requirements.txt           ← Python dependencies
+│
+├── templates/
+│   └── dashboard.html         ← Single HTML shell; loads React from CDN + JSX files
+│
+├── static/
+│   ├── styles.css             ← Full design system (oklch colors, IBM Plex + Space Grotesk)
+│   ├── live_data.js           ← Polls /api/botdata every 30s → window.BotData
+│   │                             Fires 'botdatarefreshed' custom event on each update
+│   ├── app.jsx                ← App shell: sidebar, topbar, page router
+│   │                             Keyboard shortcuts: 1=Overview 2=Sources 3=Trades
+│   │                                                 4=AI Engine 5=Broker 6=Risk
+│   ├── overview.jsx           ← Overview page: KPIs, pipeline, equity chart, risk
+│   ├── sources.jsx            ← Data sources page: world map, latency, sample packet
+│   ├── trades.jsx             ← Trades page: positions table, decisions list
+│   ├── ai-engine.jsx          ← Setup: Ollama model picker, temperature, max tokens
+│   ├── broker.jsx             ← Setup: API key, demo/live toggle, account stats
+│   ├── risk-config.jsx        ← Setup: SL/TP %, trade limits, discovery settings
+│   ├── viz.jsx                ← Reusable charts: Sparkline, AreaChart, StackedBars, Donut
+│   ├── icons.jsx              ← SVG icon components (I.Dashboard, I.Globe, etc.)
+│   └── tweaks-panel.jsx       ← Tweaks drawer: accent colour, density, activity toggle
+│
+├── watchlist.json             ← Persisted watchlist symbols
+├── trade_history.json         ← Persisted trade records (created on first trade)
+├── bot_state.json             ← Written by auto_trader.py each pipeline step (runtime only)
+└── trading_bot.log            ← Bot log file (created on first run)
 ```
 
-## Usage Examples
+---
 
-### Basic Analysis
-```python
-from trading_system import TradingSystem
+## .env Configuration Reference
 
-system = TradingSystem(is_demo=True)
+```env
+# ── Trading 212 ──────────────────────────────────────────
+TRADING212_API_KEY=<your key>          # Demo key → demo.trading212.com
+                                        # Live key → live.trading212.com
+TRADING212_DEMO_MODE=true              # true=demo account, false=live (real money!)
 
-context = {
-    "symbol": "AAPL",
-    "price": 178.23,
-    "trend": "uptrend",
-    "news": "Strong earnings",
-}
+# ── Ollama ───────────────────────────────────────────────
+OLLAMA_MODEL=llama3.2:latest           # Must match `ollama list` output exactly
+OLLAMA_TEMPERATURE=0.2                 # 0.0–1.0 (lower = more consistent)
+OLLAMA_MAX_TOKENS=256                  # Max tokens in LLM response
 
-result = system.analyze_and_trade("AAPL", context, quantity=1)
+# ── Risk management ──────────────────────────────────────
+STOP_LOSS_PCT=0.03                     # 3% below entry → auto-sell
+TAKE_PROFIT_PCT=0.05                   # 5% above entry → auto-sell
+MAX_DAILY_TRADES=10                    # Bot stops after this many trades/day
+MIN_ACCOUNT_VALUE=100                  # Bot halts if account drops below this
+DEFAULT_TRADE_QUANTITY=1               # Shares per order
+
+# ── Screener & discovery ─────────────────────────────────
+MAX_SYMBOLS_PER_CYCLE=5                # Symbols analysed per bot cycle
+DISCOVERY_INTERVAL_CYCLES=6           # Run discovery every N cycles
+DISCOVERY_TOP_N=10                     # Max new symbols added per discovery
+MAX_WATCHLIST_SIZE=20                  # Watchlist capped at this size
+
+# ── Discord webhooks ─────────────────────────────────────
+DISCORD_WEBHOOK_TRADES=https://...     # #trades channel
+DISCORD_WEBHOOK_RISK=https://...       # #risk-exits channel
+DISCORD_WEBHOOK_PORTFOLIO=https://...  # #portfolio channel
+DISCORD_WEBHOOK_DISCOVERY=https://...  # #discovery channel
+DISCORD_WEBHOOK_ALERTS=https://...     # #alerts channel
 ```
 
-### Check Account
-```python
-system = TradingSystem(is_demo=True)
-status = system.get_account_status()
-print(f"Cash: ${status['cash']:.2f}")
-print(f"Portfolio Value: ${status['portfolio_value']:.2f}")
-```
+---
 
-### View Positions
-```python
-positions = system.get_open_positions()
-for pos in positions:
-    print(f"{pos['symbol']}: {pos['quantity']} shares, P/L: ${pos['profit_loss']:.2f}")
-```
+## Dashboard UI Architecture
 
-### Cancel Order
-```python
-system.cancel_order("order_id_123")
-```
+The UI is React 18 + Babel CDN — **no build step**. All JSX is compiled in-browser.
 
-## API Endpoints
+### Key pattern: window.BotData
 
-### Account
-- `GET /account` - Account information
-- `GET /positions` - Open positions
-- `GET /orders` - Open orders
-
-### Orders
-- `POST /orders` - Place new order
-- `DELETE /orders/{id}` - Cancel order
-
-### Instruments
-- `GET /instruments/{symbol}` - Instrument details
-- `GET /instruments/search` - Search instruments
-
-## Safety & Risk Management
-
-**Built-in Safety Features:**
-- Demo mode enabled by default (virtual funds)
-- Insufficient funds check before trades
-- Position validation for sell orders
-- Daily trade limit enforcement
-- Minimum account value threshold
-- Complete trade logging
-
-**Recommended Settings for Learning:**
-- Demo Mode: **ON**
-- Trade Quantity: **1 share**
-- Max Daily Trades: **5**
-- Temperature: **0.2** (consistent decisions)
-
-## Trading Decision Flow
+`live_data.js` initialises `window.BotData` with defaults and polls `/api/botdata` every 30 seconds.
+After each poll it fires a `botdatarefreshed` custom event. Every page component subscribes to that event and re-renders.
 
 ```
-Market Context
-    ↓
-Ollama Decision Engine
-    ├─ Analyzes context
-    ├─ Generates decision
-    └─ Returns BUY/SELL/HOLD
-    ↓
-Order Executor
-    ├─ Validates account/position
-    ├─ Places order via API
-    └─ Returns execution result
-    ↓
-Trade Logger
-    └─ Records trade history
+/api/botdata (Flask)
+    reads: bot_state.json, trade_history.json, Trading212 API
+    returns: positions, decisions, orders, equity curve, bot status,
+             cycle#, step#, step_name, current_symbol, uptime_seconds,
+             model, temperature, mode, cash, free_funds, total_value
+        ↓
+live_data.js
+    Object.assign(window.BotData, response)
+    window.dispatchEvent(new CustomEvent('botdatarefreshed'))
+        ↓
+React components
+    read window.BotData directly (no props/state for live data)
+    re-render on 'botdatarefreshed' event
 ```
+
+### Critical Babel rule
+
+Each `<script type="text/babel">` runs in its own local scope.
+Any component defined in a JSX file **must** be assigned to `window` to be accessible from other files:
+```javascript
+// At the bottom of each JSX file:
+window.OverviewPage = OverviewPage;
+window.AiEnginePage = AiEnginePage;
+// etc.
+```
+Forgetting this causes a silent "Element type is invalid: undefined" crash → blank black page.
+
+### Bot pipeline state (bot_state.json)
+
+`auto_trader.py` calls `_write_state(step, step_name, symbol)` at each pipeline stage:
+
+| step | step_name | when |
+|------|-----------|------|
+| 0 | idle | before/after each cycle |
+| 1 | Risk exits | checking SL/TP positions |
+| 2 | Screener | ranking watchlist symbols |
+| 3 | Fetch context | downloading yfinance data for a symbol |
+| 4 | Ollama decide | waiting for LLM response |
+| 5 | Execute order | placing the T212 order |
+
+The Overview pipeline track reads `D.step` and `D.bot_status` from `window.BotData`
+and colours nodes: done=green checkmark, active=amber pulse, ready=neutral grey (idle).
+
+---
+
+## Bot Decision Flow
+
+```
+Every 300s (configurable):
+│
+├─ Step 1: Risk exits
+│   Check all tracked positions against SL/TP levels
+│   Execute market SELL for any that triggered
+│
+├─ Every 6 cycles: Discovery
+│   Screen 500-stock universe for momentum/volume
+│   Auto-add top candidates to watchlist (capped at MAX_WATCHLIST_SIZE)
+│
+├─ Step 2: Screener
+│   Score all watchlist symbols by recent volume + price change
+│   Pick top MAX_SYMBOLS_PER_CYCLE for this cycle
+│
+├─ For each symbol:
+│   ├─ Step 3: Fetch context
+│   │   yfinance: 60d/1h OHLCV data
+│   │   ta library: RSI14, MACD, SMA20/50, Bollinger Bands
+│   │   Derived: trend, volume label, support/resistance, bb_position
+│   │
+│   ├─ Step 4: Ollama decide
+│   │   Sends JSON context to local Ollama model
+│   │   Expects response: {"action":"BUY|SELL|HOLD","confidence":0-1,"reason":"...","quantity":N}
+│   │   Falls back to raw text scan if JSON parse fails
+│   │
+│   └─ Step 5: Execute order
+│       BUY → check free_funds > 0 → place market order → register SL/TP tracking
+│       SELL → check position exists → place market order
+│       HOLD → log only, no order
+│
+└─ Step 0: back to idle, sleep 300s
+```
+
+---
+
+## Setup / Config pages (sidebar keys 4–6)
+
+All three pages read `.env` via `GET /api/config` on mount and write via `POST /api/config`.
+Changes take effect after restarting the bot (`.env` is loaded at startup).
+
+- **AI Engine (4)**: Model dropdown (populated from `GET /api/ollama/models` → Ollama local API),
+  temperature slider 0–1, max tokens slider 64–1024, prompt preview.
+- **Broker (5)**: API key input (masked), demo/live toggle with live-mode warning,
+  account stats from live BotData, "Test connection" button hits `/api/status`.
+- **Risk & Config (6)**: Stop loss %, take profit %, max daily trades, default quantity,
+  min account value, symbols/cycle, discovery interval, top-N, max watchlist size.
+
+---
 
 ## Troubleshooting
 
-### "API key not found"
-```powershell
-$env:TRADING212_API_KEY = "your_api_key"
+### Trades all blocked / 401 Unauthorized
+→ See "Known issue" section at the top. API key mismatch between demo/live.
+
+### Setup pages show blank black screen
+→ Each JSX file must export its component to `window` (e.g. `window.AiEnginePage = AiEnginePage`).
+  Check browser console for "Element type is invalid: undefined".
+
+### Pipeline shows nothing / all steps look the same
+→ Bot not started = "ready" state (neutral grey dots, all labels visible).
+  Start the bot via `start_bot.bat` to see the pipeline animate.
+
+### Ollama 404 on every symbol
+→ Model name in `.env` doesn't match what's installed.
+  Run `ollama list` and set `OLLAMA_MODEL=<exact name from list>`.
+  Currently installed: `llama3.2:latest`, `0xroyce/plutus:latest`.
+
+### UnicodeEncodeError on Windows console
+→ A `→` character in a log message can't be encoded by Windows cp1252.
+  Already fixed in `watchlist.py` (changed to `->`).
+
+### Delisted symbol errors (yfinance 404)
+→ `PARA`, `PXD`, `SQ` removed from `BUILTIN_UNIVERSE` in `discovery.py`.
+
+### Dashboard port in use
+→ Set `DASHBOARD_PORT=5001` in `.env` (or any free port).
+
+---
+
+## Pending / Future Work
+
+- [ ] **Fix 401 API key** (blocker for all trading)
+- [ ] Wire "Pause" and "Run cycle" buttons in the topbar to actual Flask endpoints
+- [ ] Add real-time log streaming to the dashboard (tail `trading_bot.log`)
+- [ ] Backtesting page (infrastructure exists in `backtest.py`)
+- [ ] Confidence scores from Ollama are always 0.0 (LLM returns them but they aren't plumbed through to the dashboard decisions)
+- [ ] The `price` field in `trade_history.json` records are often 0 (the executor doesn't record fill price, only context price)
+- [ ] Consider adding an error boundary in React so a broken page component doesn't crash the whole app
+- [ ] Push config changes in the Setup pages live to the running bot (currently requires restart)
+
+---
+
+## Dependencies
+
+```
+flask          — web dashboard server
+requests       — Trading 212 API HTTP calls
+yfinance       — market data
+ta             — technical analysis indicators (RSI, MACD, Bollinger, SMA)
+python-dotenv  — .env file loading
+ollama         — Ollama Python client (optional; HTTP calls also work directly)
 ```
 
-### "Ollama query failed"
-```bash
-# Make sure Ollama is running
-ollama serve
+React 18, Babel standalone, and fonts are loaded from CDN in `dashboard.html` — no npm needed.
 
-# Check model is installed
-ollama list
-
-# Download model if needed
-ollama pull llama2
-```
-
-### "Insufficient funds"
-- Check account balance in `system.get_account_status()`
-- Demo accounts may need reset in Trading 212 settings
-- Ensure Demo Mode is ON: `$env:TRADING212_DEMO_MODE = "true"`
-
-## Demo vs Live Mode
-
-**Demo Mode (Recommended)**
-```
-TRADING212_DEMO_MODE=true
-```
-- Practice/demo account
-- Virtual funds only
-- No real money at risk
-- Perfect for testing
-
-**Live Mode (Caution)**
-```
-TRADING212_DEMO_MODE=false
-```
-- Real money trades
-- Real positions and P/L
-- Binding orders
-- Use only after extensive testing
-
-## Next Steps
-
-1. **Follow SETUP.md** for detailed configuration
-2. **Run main.py** to test the system
-3. **Use interactive.py** for manual trading
-4. **Review decision_system.py** to understand AI decisions
-5. **Customize config.py** for your risk parameters
-6. **Start auto_trader.py** once confident
-
-## Learning Resources
-
-- **Trading 212 API**: https://trading212.com/api
-- **Ollama Documentation**: https://github.com/ollama/ollama
-- **Trading Concepts**: https://www.investopedia.com
+---
 
 ## Disclaimer
 
-This system is provided for educational purposes. Trading involves risk:
-- Always test thoroughly in demo mode first
-- Never use live mode without understanding the risks
-- AI decisions may be wrong; always verify before trading
-- Past performance does not guarantee future results
-
-## License
-
-This project is provided as-is for educational purposes.
-
+Educational/experimental project. Always use Demo mode first.
+AI trading decisions can be wrong. Never risk money you cannot afford to lose.
