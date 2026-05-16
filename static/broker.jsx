@@ -188,3 +188,5 @@ const BrokerPage = () => {
     </div>
   );
 };
+
+window.BrokerPage = BrokerPage;

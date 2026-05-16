@@ -180,3 +180,5 @@ const RiskConfigPage = () => {
     </div>
   );
 };
+
+window.RiskConfigPage = RiskConfigPage;

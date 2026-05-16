@@ -152,15 +152,19 @@ const OverviewPage = ({ tweaks }) => {
           {/* Connected-dot progress track */}
           <div className="pipe-track">
             {steps.map((s, i) => {
-              const done    = i < stepIdx;
-              const active  = i === stepIdx;
-              const pending = i > stepIdx;
+              const isRunning = D.bot_status === "running";
+              const done    = isRunning && i < stepIdx;
+              const active  = isRunning && i === stepIdx;
+              const pending = isRunning && i > stepIdx;
+              const ready   = !isRunning;
+              const nodeClass = done ? "done" : active ? "active" : pending ? "pending" : "ready";
               return (
                 <React.Fragment key={i}>
-                  <div className={`pipe-node ${done ? "done" : active ? "active" : "pending"}`}>
+                  <div className={`pipe-node ${nodeClass}`}>
                     <div className="pipe-dot">
                       {done   && <svg viewBox="0 0 10 10" width="10" height="10"><polyline points="2,5 4.5,7.5 8,2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                       {active && <span className="pipe-dot-inner"/>}
+                      {(ready || pending) && <span style={{ width:6, height:6, borderRadius:"50%", background:"var(--border)", display:"block" }}/>}
                     </div>
                     <div className="pipe-node-body">
                       <span className="pipe-node-num">{s.label}</span>
@@ -169,7 +173,7 @@ const OverviewPage = ({ tweaks }) => {
                     </div>
                   </div>
                   {i < steps.length - 1 && (
-                    <div className={`pipe-connector ${i < stepIdx ? "done" : ""}`}/>
+                    <div className={`pipe-connector ${done ? "done" : ""}`}/>
                   )}
                 </React.Fragment>
               );
@@ -178,10 +182,10 @@ const OverviewPage = ({ tweaks }) => {
           {/* Status strip */}
           <div className="pipe-strip">
             {D.bot_status === "running"
-              ? <span style={{ color:"var(--accent)" }}>Step {D.step}/5 — {D.step_name}{D.current_symbol ? ` (${D.current_symbol})` : ""}</span>
+              ? <span style={{ color:"var(--accent)" }}>▶ Step {D.step}/5 — <b>{D.step_name}</b>{D.current_symbol ? ` · ${D.current_symbol}` : ""}</span>
               : D.cycle > 0
-                ? <span style={{ color:"var(--text-dim)" }}>Last cycle completed @ {lastCycleTime} · {D.cycle} total cycles run</span>
-                : <span style={{ color:"var(--text-dim)" }}>Bot not started — run start_bot.bat to begin</span>
+                ? <span>Last cycle completed @ <b style={{ color:"var(--text)" }}>{lastCycleTime}</b> &nbsp;·&nbsp; {D.cycle} total cycle{D.cycle !== 1 ? "s" : ""} run</span>
+                : <span>Bot not yet started &nbsp;·&nbsp; run <b style={{ color:"var(--text)" }}>start_bot.bat</b> to begin</span>
             }
           </div>
         </div>

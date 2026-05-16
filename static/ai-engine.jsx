@@ -179,3 +179,5 @@ Model: ${model || D.model || "llama3.2:latest"}  |  temperature: ${temperature} 
     </div>
   );
 };
+
+window.AiEnginePage = AiEnginePage;

@@ -560,9 +560,10 @@ svg .line-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
   z-index: 1;
 }
 
-.pipe-node.done   .pipe-dot { border-color: var(--pos);    background: var(--pos-soft);  color: var(--pos); }
-.pipe-node.active .pipe-dot { border-color: var(--accent); background: var(--accent-soft); }
-.pipe-node.pending .pipe-dot { opacity: 0.45; }
+.pipe-node.done    .pipe-dot { border-color: var(--pos);    background: var(--pos-soft);  color: var(--pos); }
+.pipe-node.active  .pipe-dot { border-color: var(--accent); background: var(--accent-soft); }
+.pipe-node.pending .pipe-dot { opacity: 0.35; }
+.pipe-node.ready   .pipe-dot { border-color: var(--border); background: var(--bg-elev); }
 
 .pipe-dot-inner {
   width: 10px; height: 10px;
@@ -580,9 +581,11 @@ svg .line-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
 .pipe-node-name { font-size: 11px; font-weight: 600; color: var(--text-mute); }
 .pipe-node-meta { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 
-.pipe-node.done   .pipe-node-name { color: var(--pos); }
-.pipe-node.active .pipe-node-name { color: var(--accent); }
-.pipe-node.active .pipe-node-num  { color: var(--accent); opacity: 0.7; }
+.pipe-node.done    .pipe-node-name { color: var(--pos); }
+.pipe-node.active  .pipe-node-name { color: var(--accent); }
+.pipe-node.active  .pipe-node-num  { color: var(--accent); opacity: 0.7; }
+.pipe-node.pending .pipe-node-name { opacity: 0.45; }
+.pipe-node.pending .pipe-node-meta { opacity: 0.45; }
 
 .pipe-strip {
   margin-top: 14px;
