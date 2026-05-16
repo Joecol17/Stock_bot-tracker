@@ -136,30 +136,53 @@ const OverviewPage = ({ tweaks }) => {
       <div className="card">
         <div className="card-head">
           <h3>Decision pipeline</h3>
-          {D.bot_status === "running"
-            ? <span className="chip accent"><span style={{width:6,height:6,borderRadius:"50%",background:"currentColor",display:"inline-block",marginRight:4}}/>
-                {D.step_name || "running"}{D.current_symbol ? ` — ${D.current_symbol}` : ""}
-              </span>
-            : <span className="chip">idle</span>
-          }
+          <span className={`chip ${D.bot_status === "running" ? "accent" : ""}`}
+            style={D.bot_status === "running" ? { display:"flex", alignItems:"center", gap:6 } : {}}>
+            {D.bot_status === "running" && (
+              <span style={{ width:7, height:7, borderRadius:"50%", background:"var(--accent)", display:"inline-block",
+                boxShadow:"0 0 0 3px oklch(78% 0.14 70 / .25)", animation:"pulse 1.4s ease infinite" }}/>
+            )}
+            {D.bot_status === "running"
+              ? `${D.step_name || "running"}${D.current_symbol ? " · " + D.current_symbol : ""}`
+              : `idle · cycle #${D.cycle || 0}`}
+          </span>
           <span className="meta">every {Math.round((D.cycle_interval||300)/60)} min · last @ {lastCycleTime}</span>
         </div>
         <div className="card-body">
-          <div className="pipe">
-            {steps.map((s, i) => (
-              <div key={i} className={`pipe-step ${i === stepIdx ? "active" : ""}`}>
-                <span className="label">STEP {s.label}</span>
-                <span className="name">{s.name}</span>
-                <span className="num">{s.meta}</span>
-                <div className="bar-track" style={{ marginTop: 8 }}>
-                  <div className="bar-fill" style={{
-                    width: i < stepIdx ? "100%" : i === stepIdx ? "60%" : "0%",
-                    background: i === stepIdx ? "var(--accent)" : i < stepIdx ? "var(--pos)" : "var(--surface-hi)",
-                    transition: "width 400ms ease"
-                  }}/>
-                </div>
-              </div>
-            ))}
+          {/* Connected-dot progress track */}
+          <div className="pipe-track">
+            {steps.map((s, i) => {
+              const done    = i < stepIdx;
+              const active  = i === stepIdx;
+              const pending = i > stepIdx;
+              return (
+                <React.Fragment key={i}>
+                  <div className={`pipe-node ${done ? "done" : active ? "active" : "pending"}`}>
+                    <div className="pipe-dot">
+                      {done   && <svg viewBox="0 0 10 10" width="10" height="10"><polyline points="2,5 4.5,7.5 8,2.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      {active && <span className="pipe-dot-inner"/>}
+                    </div>
+                    <div className="pipe-node-body">
+                      <span className="pipe-node-num">{s.label}</span>
+                      <span className="pipe-node-name">{s.name}</span>
+                      <span className="pipe-node-meta">{s.meta}</span>
+                    </div>
+                  </div>
+                  {i < steps.length - 1 && (
+                    <div className={`pipe-connector ${i < stepIdx ? "done" : ""}`}/>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+          {/* Status strip */}
+          <div className="pipe-strip">
+            {D.bot_status === "running"
+              ? <span style={{ color:"var(--accent)" }}>Step {D.step}/5 — {D.step_name}{D.current_symbol ? ` (${D.current_symbol})` : ""}</span>
+              : D.cycle > 0
+                ? <span style={{ color:"var(--text-dim)" }}>Last cycle completed @ {lastCycleTime} · {D.cycle} total cycles run</span>
+                : <span style={{ color:"var(--text-dim)" }}>Bot not started — run start_bot.bat to begin</span>
+            }
           </div>
         </div>
       </div>

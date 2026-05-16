@@ -514,22 +514,85 @@ svg .line-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
 .terminal .k-str { color: var(--accent); }
 .terminal .k-num { color: var(--pos); }
 
-/* Pipeline (process flow) */
-.pipe { display: grid; grid-template-columns: repeat(5, 1fr) ; gap: 6px; align-items: stretch; }
-.pipe-step {
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  background: var(--bg-elev);
-  padding: 12px;
-  display: flex; flex-direction: column; gap: 6px;
-  position: relative;
+/* ─── Pipeline — connected-dot progress track ─── */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(78% 0.14 70 / .5); }
+  50%       { box-shadow: 0 0 0 6px oklch(78% 0.14 70 / 0); }
 }
-.pipe-step .label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
-.pipe-step .name { font-family: var(--display); font-size: 13px; font-weight: 500; }
-.pipe-step .num { font-family: var(--mono); font-size: 11px; color: var(--text-mute); }
-.pipe-step.active { border-color: oklch(78% 0.14 70 / .4); background: linear-gradient(180deg, oklch(78% 0.14 70 / .07), transparent); }
-.pipe-step.active .name { color: var(--accent); }
-.pipe-arrow { color: var(--text-dim); display: grid; place-items: center; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.pipe-track {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 6px 0 2px;
+}
+
+.pipe-connector {
+  flex: 1;
+  height: 2px;
+  background: var(--border-soft);
+  margin-top: 15px;
+  transition: background 0.3s;
+}
+.pipe-connector.done { background: var(--pos); }
+
+.pipe-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 96px;
+}
+
+.pipe-dot {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-elev);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim);
+  transition: border-color 0.25s, background 0.25s;
+  position: relative;
+  z-index: 1;
+}
+
+.pipe-node.done   .pipe-dot { border-color: var(--pos);    background: var(--pos-soft);  color: var(--pos); }
+.pipe-node.active .pipe-dot { border-color: var(--accent); background: var(--accent-soft); }
+.pipe-node.pending .pipe-dot { opacity: 0.45; }
+
+.pipe-dot-inner {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.4s ease infinite;
+}
+
+.pipe-node-body {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  text-align: center;
+}
+
+.pipe-node-num  { font-family: var(--mono); font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+.pipe-node-name { font-size: 11px; font-weight: 600; color: var(--text-mute); }
+.pipe-node-meta { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+
+.pipe-node.done   .pipe-node-name { color: var(--pos); }
+.pipe-node.active .pipe-node-name { color: var(--accent); }
+.pipe-node.active .pipe-node-num  { color: var(--accent); opacity: 0.7; }
+
+.pipe-strip {
+  margin-top: 14px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  border: 1px solid var(--border-soft);
+}
 
 /* status bar at very top of overview */
 .tape {
@@ -554,8 +617,6 @@ svg .line-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
   display: flex;
   flex-direction: column;
   gap: 24px;
-  height: 100%;
-  overflow-y: auto;
 }
 
 .setup-header {
