@@ -5,6 +5,9 @@ Allows manual analysis and execution of trades with Ollama decision engine.
 
 import sys
 from trading_system import TradingSystem
+from watchlist import WatchlistManager
+from discovery import StockDiscovery
+from backtest import BacktestEngine
 from config import Config
 
 
@@ -20,6 +23,11 @@ def print_menu():
     print("5. Cancel an order")
     print("6. View trade history")
     print("7. Manual decision input")
+    print("8. View watchlist")
+    print("9. Add symbol to watchlist")
+    print("10. Remove symbol from watchlist")
+    print("11. Run stock discovery (scan universe, auto-add to watchlist)")
+    print("12. Run backtest")
     print("0. Exit")
     print("=" * 60)
 
@@ -240,6 +248,121 @@ def manual_decision(system: TradingSystem):
         print(f"Error: {e}")
 
 
+def view_watchlist(wl: WatchlistManager):
+    symbols = wl.list_symbols()
+    print("\n" + "-" * 60)
+    print("WATCHLIST")
+    print("-" * 60)
+    if not symbols:
+        print("Watchlist is empty")
+        return
+    for i, s in enumerate(symbols, 1):
+        print(f"  {i:>2}. {s}")
+    print(f"\nTotal: {len(symbols)} symbols")
+
+
+def add_to_watchlist(wl: WatchlistManager):
+    symbol = input("\nSymbol to add: ").strip().upper()
+    if not symbol:
+        return
+    if wl.add(symbol):
+        print(f"✓ {symbol} added to watchlist")
+    else:
+        print(f"  {symbol} is already on the watchlist")
+
+
+def remove_from_watchlist(wl: WatchlistManager):
+    view_watchlist(wl)
+    symbol = input("\nSymbol to remove: ").strip().upper()
+    if not symbol:
+        return
+    if wl.remove(symbol):
+        print(f"✓ {symbol} removed from watchlist")
+    else:
+        print(f"  {symbol} was not on the watchlist")
+
+
+def run_discovery(wl: WatchlistManager):
+    print("\n" + "-" * 60)
+    print("STOCK DISCOVERY")
+    print("-" * 60)
+    print(f"Scanning universe for top opportunities...")
+    print("(This may take 30-60 seconds)\n")
+
+    discovery = StockDiscovery()
+
+    try:
+        refresh = input("Refresh S&P 500 universe from Wikipedia first? (y/N): ").strip().lower()
+        if refresh == "y":
+            count = discovery.universe.refresh_from_sp500()
+            print(f"Universe updated: {count} symbols\n")
+    except Exception:
+        pass
+
+    added = discovery.auto_populate_watchlist(
+        wl,
+        top_n=Config.DISCOVERY_TOP_N,
+        max_watchlist_size=Config.MAX_WATCHLIST_SIZE,
+    )
+
+    if added:
+        print(f"\n✓ Added {len(added)} new symbols to watchlist:")
+        for s in added:
+            print(f"    {s}")
+    else:
+        print("\nNo new symbols to add (watchlist may be at max size or all top picks already present)")
+
+    print(f"\nWatchlist now has {len(wl.list_symbols())} symbols")
+
+
+def run_backtest(system: TradingSystem):
+    print("\n" + "-" * 60)
+    print("BACKTEST")
+    print("-" * 60)
+
+    symbol = input("Symbol to backtest (e.g. AAPL): ").strip().upper()
+    if not symbol:
+        return
+
+    period = input("Period [3mo / 6mo / 1y / 2y] (default 6mo): ").strip() or "6mo"
+    if period not in ("3mo", "6mo", "1y", "2y"):
+        print("Invalid period. Using 6mo.")
+        period = "6mo"
+
+    capital_str = input("Starting capital (default 10000): ").strip()
+    try:
+        capital = float(capital_str) if capital_str else 10_000.0
+    except ValueError:
+        capital = 10_000.0
+
+    mode = input("Mode — (r)ule-based fast / (a)i slow [default r]: ").strip().lower()
+    use_ai = mode == "a"
+
+    if use_ai and not Config.TRADING212_API_KEY:
+        print("Note: AI mode uses Ollama only — no API key needed for backtesting.")
+
+    print(f"\nRunning {'AI' if use_ai else 'rule-based'} backtest on {symbol} ({period})...")
+    if use_ai:
+        print("(AI mode makes one Ollama call per bar — may take several minutes)\n")
+
+    try:
+        engine = BacktestEngine(
+            decision_engine=system.decision_engine if use_ai else None,
+            stop_loss_pct=Config.STOP_LOSS_PCT,
+            take_profit_pct=Config.TAKE_PROFIT_PCT,
+        )
+        result = engine.run(
+            symbol=symbol,
+            period=period,
+            initial_capital=capital,
+            quantity=Config.DEFAULT_TRADE_QUANTITY,
+            use_ai=use_ai,
+        )
+        result.print_summary()
+    except Exception as e:
+        print(f"\nBacktest error: {e}")
+
+
 def main():
     """Main interactive loop."""
     print("\n" + "=" * 60)
@@ -260,13 +383,15 @@ def main():
             ollama_model=Config.OLLAMA_MODEL,
             is_demo=Config.TRADING212_DEMO_MODE,
         )
+        wl = WatchlistManager(Config.WATCHLIST_FILE)
         print(f"✓ Connected to Trading 212 ({'DEMO' if Config.TRADING212_DEMO_MODE else 'LIVE'} mode)")
         print(f"✓ Ollama model: {Config.OLLAMA_MODEL}")
-        
+        print(f"✓ Watchlist: {len(wl.list_symbols())} symbols")
+
         while True:
             print_menu()
             choice = input("Select option: ").strip()
-            
+
             if choice == "1":
                 analyze_and_trade(system)
             elif choice == "2":
@@ -281,6 +406,16 @@ def main():
                 view_trade_history(system)
             elif choice == "7":
                 manual_decision(system)
+            elif choice == "8":
+                view_watchlist(wl)
+            elif choice == "9":
+                add_to_watchlist(wl)
+            elif choice == "10":
+                remove_from_watchlist(wl)
+            elif choice == "11":
+                run_discovery(wl)
+            elif choice == "12":
+                run_backtest(system)
             elif choice == "0":
                 print("\nExiting...")
                 break

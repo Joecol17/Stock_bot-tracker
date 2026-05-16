@@ -128,6 +128,14 @@ class TradingSystem:
             for o in orders
         ]
 
+    def check_risk_exits(self) -> list:
+        """Check all tracked positions for stop-loss / take-profit hits and execute exits."""
+        return self.executor.check_and_execute_exits()
+
+    def get_tracked_positions(self) -> dict:
+        """Return current stop-loss / take-profit tracking state."""
+        return self.executor.get_tracked_positions()
+
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order."""
         try:

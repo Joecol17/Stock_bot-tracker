@@ -1,9 +1,11 @@
 import json
 import os
+import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from trading212_client import Trading212Client, OrderSide, OrderType
+from config import Config
 
 HISTORY_FILE = "trade_history.json"
 
@@ -25,6 +27,8 @@ class OrderExecutor:
     def __init__(self, trading_client: Trading212Client):
         self.client = trading_client
         self.trade_history = self._load_history()
+        # symbol -> {entry_price, stop_loss, take_profit, quantity}
+        self._tracked_positions: Dict[str, Dict[str, float]] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -97,6 +101,54 @@ class OrderExecutor:
     def get_trade_history(self) -> list:
         return self.trade_history
 
+    def check_and_execute_exits(self) -> List[ExecutionResult]:
+        """
+        Check all tracked positions against their stop-loss and take-profit levels.
+        Executes a market sell for any that have been hit. Returns list of results.
+        """
+        if not self._tracked_positions:
+            return []
+
+        try:
+            positions = self.client.get_positions()
+        except Exception:
+            return []
+
+        current_prices = {p.instrument_code: p.current_price for p in positions}
+        results: List[ExecutionResult] = []
+
+        for symbol, tracking in list(self._tracked_positions.items()):
+            if symbol not in current_prices:
+                # Position closed externally — stop tracking it
+                del self._tracked_positions[symbol]
+                continue
+
+            price = current_prices[symbol]
+            hit = None
+            if price <= tracking["stop_loss"]:
+                hit = "STOP_LOSS"
+            elif price >= tracking["take_profit"]:
+                hit = "TAKE_PROFIT"
+
+            if hit:
+                result = self._execute_sell(symbol, tracking["quantity"])
+                result.action = hit
+                entry = tracking["entry_price"]
+                pct = round((price - entry) / entry * 100, 2)
+                result.message = (
+                    f"{hit}: sold {tracking['quantity']} {symbol} at ${price:.4f} "
+                    f"(entry ${entry:.4f}, {pct:+.2f}%)"
+                )
+                self._save_history(result)
+                results.append(result)
+                del self._tracked_positions[symbol]
+
+        return results
+
+    def get_tracked_positions(self) -> Dict[str, Dict[str, float]]:
+        """Return a copy of the current SL/TP tracking state."""
+        return dict(self._tracked_positions)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -148,18 +200,41 @@ class OrderExecutor:
                 side=OrderSide.BUY, order_type=OrderType.MARKET,
             )
             order_id = str(response.get("id") or response.get("orderId") or "")
-            result = ExecutionResult(
+
+            # Fetch fill price and register SL/TP tracking
+            self._register_position(symbol, quantity)
+
+            return ExecutionResult(
                 success=True, symbol=symbol, action="BUY", quantity=quantity,
                 message=f"BUY order placed: {quantity} shares of {symbol}",
                 order_id=order_id,
             )
-            return result
 
         except Exception as e:
             return ExecutionResult(
                 success=False, symbol=symbol, action="BUY", quantity=quantity,
                 message=f"BUY order failed: {e}", error=str(e),
             )
+
+    def _register_position(self, symbol: str, quantity: float) -> None:
+        """Record entry price and SL/TP levels for a newly bought position."""
+        time.sleep(1)  # brief wait for the order to settle before fetching position
+        try:
+            positions = self.client.get_positions()
+            pos = next((p for p in positions if p.instrument_code == symbol), None)
+            entry = pos.average_price if pos else None
+        except Exception:
+            entry = None
+
+        if not entry or entry <= 0:
+            return  # can't track without a valid entry price
+
+        self._tracked_positions[symbol] = {
+            "entry_price": entry,
+            "stop_loss": round(entry * (1 - Config.STOP_LOSS_PCT), 4),
+            "take_profit": round(entry * (1 + Config.TAKE_PROFIT_PCT), 4),
+            "quantity": quantity,
+        }
 
     def _execute_sell(self, symbol: str, quantity: float) -> ExecutionResult:
         try:

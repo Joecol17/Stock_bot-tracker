@@ -115,10 +115,16 @@ class DecisionEngine:
         context_json = json.dumps(context, indent=2)
         return (
             "You are a stock trading decision agent. Analyse the context and answer the question.\n"
+            "The context may include technical indicators — use them as follows:\n"
+            "  - rsi_14: RSI(14). Below 30 = oversold (bullish signal), above 70 = overbought (bearish signal).\n"
+            "  - macd_crossover: 'bullish' means MACD crossed above signal line (buy signal), 'bearish' means below (sell signal).\n"
+            "  - macd_histogram: positive and rising = strengthening uptrend; negative and falling = strengthening downtrend.\n"
+            "  - price_vs_sma20_pct / price_vs_sma50_pct: % above/below the moving average. Negative = price below MA (bearish).\n"
+            "  - bb_position: 0 = price at lower Bollinger Band (potential reversal up), 1 = at upper band (potential reversal down).\n"
             'Respond with a JSON object containing exactly these keys: "action" (one of BUY, SELL, HOLD), '
-            '"reasoning" (brief explanation), "details" (any extra notes).\n\n'
+            '"reasoning" (brief explanation referencing the indicators), "details" (any extra notes).\n\n'
             f"Context:\n{context_json}\n\n"
             f"Question: {question}\n\n"
             "Answer in valid JSON only. Example: "
-            '{"action": "HOLD", "reasoning": "Price near resistance", "details": ""}'
+            '{"action": "HOLD", "reasoning": "RSI at 65 approaching overbought, MACD bearish crossover", "details": ""}'
         )

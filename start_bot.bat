@@ -1,145 +1,101 @@
 @echo off
 setlocal enabledelayedexpansion
-title Stock Trading Bot
+title Stock Bot · Mission Control
 
 echo ============================================================
-echo  Stock Trading Bot - Starting Up
+echo  Stock Bot Tracker
 echo ============================================================
 echo.
 
 :: ---------------------------------------------------------------
-:: 1. Load .env file
-:: ---------------------------------------------------------------
-if not exist ".env" (
-    echo [ERROR] .env file not found.
-    echo Copy .env.example to .env and fill in your API key.
-    pause
-    exit /b 1
-)
-
-for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
-    set "line=%%A"
-    if not "!line:~0,1!"=="#" (
-        if not "%%A"=="" (
-            set "%%A=%%B"
-        )
-    )
-)
-echo [OK] Config loaded from .env
-
-:: ---------------------------------------------------------------
-:: 2. Check API key is set
-:: ---------------------------------------------------------------
-if "%TRADING212_API_KEY%"=="your_actual_api_key_here" (
-    echo.
-    echo [ERROR] You haven't set your Trading 212 API key yet.
-    echo Open .env and replace "your_actual_api_key_here" with your real key.
-    echo.
-    pause
-    exit /b 1
-)
-if "%TRADING212_API_KEY%"=="" (
-    echo [ERROR] TRADING212_API_KEY is not set in .env
-    pause
-    exit /b 1
-)
-echo [OK] API key found
-
-:: ---------------------------------------------------------------
-:: 3. Check Python is available
+:: 1. Check Python
 :: ---------------------------------------------------------------
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] Python is not installed or not in PATH.
-    echo Download Python from https://www.python.org/downloads/
-    pause
-    exit /b 1
+    echo [ERROR] Python not found. Download from https://www.python.org/downloads/
+    pause & exit /b 1
 )
 echo [OK] Python found
 
 :: ---------------------------------------------------------------
-:: 4. Install / update Python dependencies
+:: 2. Install / update dependencies
 :: ---------------------------------------------------------------
-echo.
 echo Installing dependencies...
 python -m pip install -r requirements.txt --quiet
-if errorlevel 1 (
-    echo [ERROR] pip install failed. Check your internet connection.
-    pause
-    exit /b 1
-)
 echo [OK] Dependencies ready
 
 :: ---------------------------------------------------------------
-:: 5. Check Ollama is installed
+:: 3. Load .env
+:: ---------------------------------------------------------------
+if exist ".env" (
+    for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+        set "line=%%A"
+        if not "!line:~0,1!"=="#" if not "%%A"=="" set "%%A=%%B"
+    )
+    echo [OK] Config loaded from .env
+) else (
+    echo [INFO] No .env found - copy .env.example to .env to configure your API key
+)
+
+:: ---------------------------------------------------------------
+:: 4. Start Ollama if installed
 :: ---------------------------------------------------------------
 ollama --version >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Ollama is not installed or not in PATH.
-    echo Download from https://ollama.com/download
-    pause
-    exit /b 1
-)
-echo [OK] Ollama found
-
-:: ---------------------------------------------------------------
-:: 6. Start Ollama server if not already running
-:: ---------------------------------------------------------------
-ollama list >nul 2>&1
-if errorlevel 1 (
-    echo Starting Ollama server...
-    start /b "" ollama serve
-    timeout /t 3 /nobreak >nul
-    echo [OK] Ollama server started
-) else (
-    echo [OK] Ollama server already running
-)
-
-:: ---------------------------------------------------------------
-:: 7. Check the configured model is pulled
-:: ---------------------------------------------------------------
-ollama list | findstr /i "%OLLAMA_MODEL%" >nul 2>&1
-if errorlevel 1 (
-    echo.
-    echo [WARNING] Model "%OLLAMA_MODEL%" not found locally. Pulling it now...
-    echo This may take a few minutes on first run.
-    ollama pull %OLLAMA_MODEL%
+if not errorlevel 1 (
+    ollama list >nul 2>&1
     if errorlevel 1 (
-        echo [ERROR] Could not pull model "%OLLAMA_MODEL%". Check your Ollama installation.
-        pause
-        exit /b 1
+        echo Starting Ollama...
+        start /b "" ollama serve
+        timeout /t 3 /nobreak >nul
     )
+    if defined OLLAMA_MODEL (
+        ollama list | findstr /i "%OLLAMA_MODEL%" >nul 2>&1
+        if errorlevel 1 (
+            echo Pulling model %OLLAMA_MODEL%...
+            ollama pull %OLLAMA_MODEL%
+        )
+        echo [OK] Ollama ready ^(%OLLAMA_MODEL%^)
+    )
+) else (
+    echo [INFO] Ollama not found - AI decisions will be skipped
 )
-echo [OK] Model %OLLAMA_MODEL% is ready
 
 :: ---------------------------------------------------------------
-:: 8. Show current settings and confirm before trading
+:: 5. Show settings & warn if live mode
 :: ---------------------------------------------------------------
 echo.
 echo ============================================================
-echo  Settings
+if defined TRADING212_DEMO_MODE (
+    echo  Mode:   %TRADING212_DEMO_MODE%  ^(DEMO=true / LIVE=false^)
+) else (
+    echo  Mode:   DEMO ^(default^)
+)
+if defined OLLAMA_MODEL    echo  Model:  %OLLAMA_MODEL%
+if defined DEFAULT_TRADE_QUANTITY echo  Qty:    %DEFAULT_TRADE_QUANTITY% share^(s^) per order
+if defined MAX_DAILY_TRADES echo  Limit:  %MAX_DAILY_TRADES% trades/day
 echo ============================================================
-echo  Mode:            %TRADING212_DEMO_MODE% (DEMO=true, LIVE=false)
-echo  Model:           %OLLAMA_MODEL%
-echo  Trade quantity:  %DEFAULT_TRADE_QUANTITY% share(s) per order
-echo  Max daily trades:%MAX_DAILY_TRADES%
-echo ============================================================
-echo.
 if /i "%TRADING212_DEMO_MODE%"=="false" (
-    echo  [!] WARNING: LIVE MODE IS ON - real money will be used!
     echo.
+    echo  [!] WARNING: LIVE MODE - real money will be used!
 )
-set /p "confirm=Press ENTER to start the bot, or Ctrl+C to cancel..."
+echo.
+set /p "confirm=Press ENTER to launch, or Ctrl+C to cancel..."
 
 :: ---------------------------------------------------------------
-:: 9. Run the bot
+:: 6. Launch dashboard in a separate window + open browser
 :: ---------------------------------------------------------------
 echo.
-echo Starting bot... (Press Ctrl+C to stop)
+echo Opening dashboard at http://localhost:5000 ...
+start "Dashboard" cmd /k "python dashboard.py"
+start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://localhost:5000"
+
+:: ---------------------------------------------------------------
+:: 7. Run the trading bot
+:: ---------------------------------------------------------------
+echo Starting trading bot... (Ctrl+C to stop)
 echo.
 python auto_trader.py
 
 echo.
-echo Bot has stopped.
+echo Bot stopped. Close the Dashboard window manually if needed.
 pause

@@ -3,3 +3,12 @@ requests>=2.31.0
 
 # Live market data (price, volume, trend, fundamentals)
 yfinance>=0.2.40
+
+# Technical indicators (RSI, MACD, SMA, Bollinger Bands)
+ta>=0.11.0
+
+# Load environment variables from .env file
+python-dotenv>=1.0.0
+
+# Web dashboard
+flask>=3.0.0
