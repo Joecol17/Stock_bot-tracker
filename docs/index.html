@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="theme-color" content="#0d0f14" />
+  <title>⌬ Mission Control · Remote</title>
+  <style>
+    :root {
+      --bg:       #0d0f14;
+      --surface:  #141720;
+      --surface2: #1a1e2e;
+      --border:   #1e2330;
+      --text:     #e8eaf0;
+      --dim:      #7c829a;
+      --mute:     #4a5066;
+      --accent:   #d4a16a;
+      --pos:      #4ade80;
+      --neg:      #f87171;
+      --warn:     #fbbf24;
+      --info:     #60a5fa;
+      --radius:   10px;
+      --mono:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100dvh;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    /* ── Top bar ───────────────────────────────────────────────────────── */
+    .topbar {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; }
+    .brand-mark { font-size: 22px; color: var(--accent); line-height: 1; }
+    .brand-name { font-weight: 700; font-size: 14px; }
+    .brand-sub  { font-size: 10px; color: var(--dim); font-weight: 400; margin-left: 4px; }
+    .topbar-right { display: flex; gap: 6px; }
+
+    .icon-btn {
+      background: none; border: 1px solid var(--border);
+      color: var(--dim); border-radius: 6px;
+      width: 33px; height: 33px;
+      cursor: pointer; font-size: 15px;
+      display: flex; align-items: center; justify-content: center;
+      transition: color .15s, border-color .15s; flex-shrink: 0;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--dim); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin .6s linear infinite; }
+
+    /* ── Content ───────────────────────────────────────────────────────── */
+    .content {
+      padding: 12px; max-width: 600px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+
+    /* ── Banners ───────────────────────────────────────────────────────── */
+    .banner {
+      border-radius: var(--radius); padding: 10px 14px;
+      font-size: 13px; display: none; align-items: center; gap: 10px;
+    }
+    .banner.show { display: flex; }
+    .banner.offline  { background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.25); color:var(--neg); }
+    .banner.shutdown { background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.25); justify-content:space-between; }
+    .banner.no-url   { background:rgba(251,191,36,.08);  border:1px solid rgba(251,191,36,.25);  color:var(--warn); }
+
+    /* ── Status chips ──────────────────────────────────────────────────── */
+    .status-bar {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 14px;
+      display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+    }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 20px;
+      font-size: 11px; font-weight: 700; letter-spacing: .05em;
+      border: 1px solid var(--border); white-space: nowrap;
+    }
+    .chip.running { color:var(--pos);  border-color:rgba(74,222,128,.3);  background:rgba(74,222,128,.07); }
+    .chip.paused  { color:var(--warn); border-color:rgba(251,191,36,.3);  background:rgba(251,191,36,.07); }
+    .chip.idle    { color:var(--dim);  border-color:var(--border); }
+    .chip.offline { color:var(--neg);  border-color:rgba(248,113,113,.3); background:rgba(248,113,113,.07); }
+    .chip.live    { color:var(--pos);  border-color:rgba(74,222,128,.3);  background:rgba(74,222,128,.07); }
+    .chip.demo    { color:var(--warn); border-color:rgba(251,191,36,.3);  background:rgba(251,191,36,.07); }
+    .chip.bull    { color:var(--pos);  border-color:rgba(74,222,128,.3);  background:rgba(74,222,128,.07); }
+    .chip.bear    { color:var(--neg);  border-color:rgba(248,113,113,.3); background:rgba(248,113,113,.07); }
+    .chip.neutral { color:var(--warn); border-color:rgba(251,191,36,.3);  background:rgba(251,191,36,.07); }
+
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      display: inline-block; flex-shrink: 0;
+    }
+    .dot.green { background: var(--pos); }
+    .dot.red   { background: var(--neg); }
+    .dot.amber { background: var(--warn); }
+    .dot.gray  { background: var(--mute); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .pulse { animation: pulse 2s ease-in-out infinite; }
+
+    .regime-detail {
+      width: 100%; font-size: 10px; color: var(--dim);
+      font-family: var(--mono); padding-top: 6px; margin-top: 2px;
+      border-top: 1px solid var(--border);
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+
+    /* ── Action buttons ────────────────────────────────────────────────── */
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn {
+      padding: 11px 14px; border-radius: var(--radius);
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background .15s, border-color .15s, opacity .15s; white-space: nowrap;
+    }
+    .btn:disabled { opacity: .42; cursor: not-allowed; }
+    .btn:hover:not(:disabled) { background: var(--surface2); border-color: var(--dim); }
+    .btn.primary { background:rgba(212,161,106,.12); border-color:rgba(212,161,106,.35); color:var(--accent); }
+    .btn.primary:hover:not(:disabled) { background:rgba(212,161,106,.2); }
+    .btn.success { background:rgba(74,222,128,.10);  border-color:rgba(74,222,128,.32);  color:var(--pos); }
+    .btn.warn    { background:rgba(251,191,36,.08);  border-color:rgba(251,191,36,.3);   color:var(--warn); }
+    .btn.danger  { background:rgba(248,113,113,.08); border-color:rgba(248,113,113,.3);  color:var(--neg); }
+    .btn.full    { grid-column: 1 / -1; }
+
+    /* ── Cards ─────────────────────────────────────────────────────────── */
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+    .card-head {
+      padding: 9px 14px; font-size: 10px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-head-right { font-size:11px; color:var(--accent); text-transform:none; letter-spacing:0; font-weight:600; }
+    .card-body  { padding: 14px; }
+    .card-empty { padding:20px 14px; color:var(--dim); font-size:12px; text-align:center; }
+
+    /* ── Portfolio KPIs ────────────────────────────────────────────────── */
+    .kpi-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .kpi     { display:flex; flex-direction:column; gap:3px; }
+    .kpi-val { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+    .kpi-lbl { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; }
+
+    /* ── Position tiles ────────────────────────────────────────────────── */
+    .pos-tile { padding:12px 14px; border-bottom:1px solid var(--border); }
+    .pos-tile:last-child { border-bottom:none; }
+    .pos-top  { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:5px; }
+    .pos-sym  { font-weight:700; font-size:15px; font-family:var(--mono); }
+    .pos-pl   { font-size:13px; font-weight:600; }
+    .pos-meta { font-size:11px; color:var(--dim); line-height:1.5; }
+
+    .slt-wrap { margin:8px 0 4px; }
+    .slt-bar  { height:4px; background:var(--border); border-radius:2px; position:relative; }
+    .slt-fill { position:absolute; top:0; height:100%; border-radius:2px; background:var(--accent); transition:width .4s; }
+    .slt-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--mute); font-family:var(--mono); margin-top:3px; }
+
+    .hold-badge {
+      display:inline-block; font-size:10px; padding:1px 7px; border-radius:20px;
+      border:1px solid var(--border); color:var(--dim); margin-left:6px;
+    }
+    .hold-badge.warn { color:var(--warn); border-color:rgba(251,191,36,.3); background:rgba(251,191,36,.07); }
+
+    /* ── Decision rows ─────────────────────────────────────────────────── */
+    .dec-row { padding:9px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; }
+    .dec-row:last-child { border-bottom:none; }
+    .dec-action { font-size:11px; font-weight:700; width:34px; text-align:center; font-family:var(--mono); flex-shrink:0; }
+    .dec-action.buy  { color:var(--pos); }
+    .dec-action.sell { color:var(--neg); }
+    .dec-action.hold { color:var(--mute); }
+    .dec-sym   { font-size:13px; font-weight:600; font-family:var(--mono); flex:1; }
+    .dec-right { text-align:right; flex-shrink:0; }
+    .dec-conf  { font-size:11px; color:var(--dim); }
+    .dec-time  { font-size:10px; color:var(--mute); font-family:var(--mono); }
+    .dec-setup { font-size:10px; color:var(--accent); }
+
+    /* ── Modals (shared styles) ────────────────────────────────────────── */
+    .modal-overlay {
+      display:none; position:fixed; inset:0;
+      background:rgba(0,0,0,.75); z-index:100;
+      align-items:center; justify-content:center; padding:20px;
+    }
+    .modal-overlay.show { display:flex; }
+    .modal-box {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); padding:24px;
+      width:100%; max-width:400px;
+    }
+    .modal-box h2 { font-size:16px; margin-bottom:18px; }
+    .field        { margin-bottom:14px; }
+    .field label  { display:block; font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; margin-bottom:5px; }
+    .field input  {
+      width:100%; background:var(--surface2);
+      border:1px solid var(--border); border-radius:6px;
+      color:var(--text); font-size:14px; padding:10px 12px;
+    }
+    .field input:focus { outline:none; border-color:var(--accent); }
+    .hint { font-size:10px; color:var(--mute); margin-top:4px; line-height:1.4; }
+    .modal-footer { display:flex; gap:8px; margin-top:4px; }
+    .link-btn {
+      background:none; border:none; cursor:pointer;
+      font-size:11px; color:var(--mute); text-decoration:underline;
+      display:block; width:100%; text-align:center; margin-top:12px;
+    }
+    .link-btn:hover { color:var(--neg); }
+
+    /* ── Login modal specifics ─────────────────────────────────────────── */
+    .login-brand {
+      text-align:center; margin-bottom:24px;
+    }
+    .login-brand .mark { font-size:36px; color:var(--accent); line-height:1; margin-bottom:8px; }
+    .login-brand h2    { font-size:18px; margin-bottom:4px; }
+    .login-brand p     { font-size:12px; color:var(--dim); }
+
+    .login-error {
+      min-height:18px; font-size:12px; color:var(--neg);
+      text-align:center; margin-bottom:10px;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────────────── */
+    .footer { text-align:center; font-size:10px; color:var(--mute); padding:14px 12px; }
+
+    /* ── Text helpers ──────────────────────────────────────────────────── */
+    .pos-text { color:var(--pos); }
+    .neg-text { color:var(--neg); }
+
+    /* ── Responsive ────────────────────────────────────────────────────── */
+    @media (min-width: 480px) {
+      .content  { padding:16px; gap:12px; }
+      .kpi-val  { font-size:26px; }
+      .modal-box { padding:32px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
+<div class="topbar" id="topbar">
+  <div class="brand">
+    <div class="brand-mark">⌬</div>
+    <div>
+      <span class="brand-name">Mission Control</span>
+      <span class="brand-sub">remote</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button class="icon-btn" id="refresh-btn" onclick="refreshData()" title="Refresh now">↻</button>
+    <button class="icon-btn" id="logout-btn"  onclick="logout()"      title="Sign out" style="display:none;">⎋</button>
+    <button class="icon-btn" onclick="openSettings()"                 title="Settings">⚙</button>
+  </div>
+</div>
+
+<!-- ── Dashboard content (hidden until logged in) ─────────────────────────── -->
+<div class="content" id="app-content" style="display:none;">
+
+  <!-- Offline banner -->
+  <div class="banner offline" id="offline-banner">
+    ⚠️ PC offline or unreachable — showing last known data
+  </div>
+
+  <!-- No-URL prompt -->
+  <div class="banner no-url" id="no-url-banner">
+    ⚠️ No API URL set.
+    <button class="btn warn" style="padding:5px 12px;font-size:12px;margin-left:auto;" onclick="openSettings()">⚙ Configure</button>
+  </div>
+
+  <!-- Shutdown countdown -->
+  <div class="banner shutdown" id="shutdown-bar">
+    <span id="shutdown-msg" style="color:var(--neg);font-size:13px;font-weight:600;"></span>
+    <button class="btn danger" style="padding:6px 12px;font-size:12px;flex-shrink:0;" onclick="cancelShutdown()">Cancel</button>
+  </div>
+
+  <!-- Status chips -->
+  <div class="status-bar">
+    <span class="chip idle" id="chip-status"><span class="dot gray"></span> CONNECTING</span>
+    <span class="chip demo" id="chip-mode">DEMO</span>
+    <span class="chip neutral" id="chip-regime">📊 REGIME</span>
+    <div class="regime-detail" id="regime-detail" style="display:none;"></div>
+  </div>
+
+  <!-- Actions -->
+  <div class="actions">
+    <button class="btn primary" id="btn-cycle"    onclick="runCycle()">▶ Run Cycle</button>
+    <button class="btn"         id="btn-pause"    onclick="togglePause()">⏸ Pause</button>
+    <button class="btn warn"    id="btn-sleep"    onclick="sleepPC()">💤 Sleep PC</button>
+    <button class="btn danger"  id="btn-shutdown" onclick="initiateShutdown()">⏻ Shutdown</button>
+  </div>
+
+  <!-- Portfolio -->
+  <div class="card">
+    <div class="card-head">
+      Portfolio
+      <span class="card-head-right" id="portfolio-mode"></span>
+    </div>
+    <div class="card-body">
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-total">—</div>
+          <div class="kpi-lbl">Total value</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-val" id="kpi-cash">—</div>
+          <div class="kpi-lbl">Available cash</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Positions -->
+  <div class="card">
+    <div class="card-head">
+      Open Positions
+      <span class="card-head-right" id="pos-count"></span>
+    </div>
+    <div id="positions-body"><div class="card-empty">Connecting…</div></div>
+  </div>
+
+  <!-- Recent decisions -->
+  <div class="card">
+    <div class="card-head">
+      Recent Decisions
+      <span style="font-size:10px;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0;">last 5</span>
+    </div>
+    <div id="decisions-body"><div class="card-empty">Connecting…</div></div>
+  </div>
+
+  <div class="footer" id="footer">Never refreshed</div>
+</div>
+
+<!-- ── Login modal ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay show" id="login-modal">
+  <div class="modal-box">
+    <div class="login-brand">
+      <div class="mark">⌬</div>
+      <h2>Mission Control</h2>
+      <p>Sign in to access your stock bot</p>
+    </div>
+
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="inp-user" autocomplete="username"
+             placeholder="Enter username" onkeydown="loginKey(event)" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="inp-pass" autocomplete="current-password"
+             placeholder="Enter password" onkeydown="loginKey(event)" />
+    </div>
+
+    <div class="login-error" id="login-error"></div>
+
+    <button class="btn primary full" id="login-btn" onclick="doLogin()">Sign In</button>
+
+    <button class="link-btn" onclick="openSettings()" style="margin-top:16px;">
+      ⚙ Change server URL
+    </button>
+  </div>
+</div>
+
+<!-- ── Settings modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="settings-modal" onclick="overlayClick(event,'settings-modal')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h2>⚙ Server Settings</h2>
+
+    <div class="field">
+      <label>Cloudflare Tunnel URL</label>
+      <input type="url" id="inp-url"
+             placeholder="https://random-name.trycloudflare.com" />
+      <div class="hint">
+        Your PC's public address — copy it from the sidebar of the local
+        dashboard (or from <code style="color:var(--accent);font-family:var(--mono);">tunnel_url.txt</code>).
+        Changes every boot unless you use a Cloudflare Named Tunnel.
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn primary" style="flex:1;" onclick="saveSettings()">Save</button>
+      <button class="btn" style="padding:11px 16px;" onclick="closeModal('settings-modal')">Cancel</button>
+    </div>
+    <button class="link-btn" onclick="clearEverything()">Clear all saved data &amp; sign out</button>
+  </div>
+</div>
+
+<!-- config.js may pre-fill window.STOCKBOT_API_URL -->
+<script src="config.js" onerror="/* config.js not present — using settings panel */"></script>
+
+<script>
+// ── Configuration bootstrap ──────────────────────────────────────────────────
+// Priority: config.js value → localStorage → empty string
+function _pick(windowKey, lsKey, placeholder) {
+  const w = window[windowKey];
+  if (w && w !== placeholder) return w;
+  return localStorage.getItem(lsKey) || '';
+}
+
+let API_URL = _pick('STOCKBOT_API_URL', 'stockbot_url',
+                    'https://YOUR-TUNNEL-URL.trycloudflare.com');
+let TOKEN   = localStorage.getItem('stockbot_token') || '';
+
+// ── State ────────────────────────────────────────────────────────────────────
+let cachedData    = null;
+let isPaused      = false;
+let shutdownTimer = null;
+let shutdownLeft  = 0;
+
+// ── DOM ──────────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n == null || isNaN(+n)) return '—';
+  return '$' + Math.abs(+n).toLocaleString('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+}
+
+// ── API wrapper ───────────────────────────────────────────────────────────────
+async function api(path, options = {}) {
+  if (!API_URL) return null;
+  const headers = { 'Content-Type': 'application/json' };
+  if (TOKEN) headers['X-Auth-Token'] = TOKEN;
+  try {
+    const r = await fetch(API_URL.replace(/\/$/, '') + path,
+                          { ...options, headers });
+    const body = await r.json().catch(() => ({}));
+    body._status = r.status;
+    return body;
+  } catch {
+    return null;
+  }
+}
+
+// ── Login flow ────────────────────────────────────────────────────────────────
+function showLogin(errMsg) {
+  $('app-content').style.display = 'none';
+  $('logout-btn').style.display  = 'none';
+  $('login-modal').classList.add('show');
+  if (errMsg) $('login-error').textContent = errMsg;
+  // Focus username field if empty, else password
+  setTimeout(() => {
+    const u = $('inp-user'), p = $('inp-pass');
+    (u.value ? p : u).focus();
+  }, 80);
+}
+
+function showDashboard() {
+  $('login-modal').classList.remove('show');
+  $('app-content').style.display = '';
+  $('logout-btn').style.display  = '';
+}
+
+function loginKey(e) {
+  if (e.key === 'Enter') doLogin();
+}
+
+async function doLogin() {
+  const btn  = $('login-btn');
+  const user = $('inp-user').value.trim();
+  const pass = $('inp-pass').value;
+  $('login-error').textContent = '';
+
+  if (!API_URL) {
+    openSettings();
+    return;
+  }
+  if (!user) { $('inp-user').focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+
+  const r = await api('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username: user, password: pass }),
+  });
+
+  btn.disabled = false;
+  btn.textContent = 'Sign In';
+
+  if (!r) {
+    $('login-error').textContent = 'Cannot reach server — check the URL in ⚙ Settings.';
+    return;
+  }
+  if (r._status === 401) {
+    $('login-error').textContent = 'Incorrect username or password.';
+    $('inp-pass').value = '';
+    $('inp-pass').focus();
+    return;
+  }
+  if (!r.ok) {
+    $('login-error').textContent = r.error || 'Server error — check your .env configuration.';
+    return;
+  }
+
+  // Success — store token (may be empty string if no auth configured)
+  TOKEN = r.token || '';
+  if (TOKEN) localStorage.setItem('stockbot_token', TOKEN);
+  showDashboard();
+  refreshData();
+}
+
+function logout() {
+  TOKEN = '';
+  localStorage.removeItem('stockbot_token');
+  isPaused      = false;
+  cachedData    = null;
+  clearInterval(shutdownTimer);
+  $('shutdown-bar').classList.remove('show');
+  showLogin();
+}
+
+// ── Try token we already have ─────────────────────────────────────────────────
+async function tryAutoLogin() {
+  if (!API_URL) {
+    // No URL configured — show login (which will prompt for URL first)
+    showLogin();
+    $('no-url-banner').classList.add('show');
+    return;
+  }
+
+  // Hit /api/auth/check with stored token; if 200 we're good, if 401 need login
+  const r = await api('/api/auth/check');
+  if (!r) {
+    // Can't reach server — still show login with error after a moment
+    showLogin('Cannot reach server. Check the URL in ⚙ Settings, then try again.');
+    return;
+  }
+  if (r._status === 401 || r.login_required) {
+    showLogin();
+    return;
+  }
+  // Token valid (or no auth configured)
+  showDashboard();
+  refreshData();
+}
+
+// ── Data refresh ──────────────────────────────────────────────────────────────
+async function refreshData() {
+  if (!API_URL) { $('no-url-banner').classList.add('show'); return; }
+  $('no-url-banner').classList.remove('show');
+
+  $('refresh-btn').classList.add('spin');
+  const d = await api('/api/botdata');
+  $('refresh-btn').classList.remove('spin');
+
+  if (!d || d.error === 'Unauthorized' || d._status === 401) {
+    // Token expired or revoked
+    if (d?._status === 401) { showLogin('Session expired — please sign in again.'); return; }
+    $('offline-banner').classList.add('show');
+    if (cachedData) render(cachedData);
+    else renderOffline();
+    return;
+  }
+  $('offline-banner').classList.remove('show');
+  cachedData = d;
+  isPaused   = !!d.paused;
+  render(d);
+  $('footer').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+}
+
+// ── Offline placeholder ───────────────────────────────────────────────────────
+function renderOffline() {
+  $('chip-status').className = 'chip offline';
+  $('chip-status').innerHTML = '<span class="dot red"></span> OFFLINE';
+  $('positions-body').innerHTML  = '<div class="card-empty">PC offline</div>';
+  $('decisions-body').innerHTML  = '<div class="card-empty">PC offline</div>';
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(d) {
+  renderStatus(d);
+  renderPortfolio(d);
+  renderPositions(d);
+  renderDecisions(d);
+}
+
+function renderStatus(d) {
+  const status = d.bot_status || 'idle';
+  const chipEl = $('chip-status');
+  chipEl.className = 'chip ' + (status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle');
+  const dotC = status === 'running' ? 'green pulse' : status === 'paused' ? 'amber' : 'gray';
+  chipEl.innerHTML = `<span class="dot ${dotC}"></span> ${status.toUpperCase()}`;
+
+  const mode = d.mode || 'DEMO';
+  const modeEl = $('chip-mode');
+  modeEl.className = 'chip ' + (mode === 'LIVE' ? 'live' : 'demo');
+  modeEl.textContent = mode + ' MODE';
+
+  const reg = d.regime || {};
+  const r   = (reg.regime || 'unknown').toLowerCase();
+  const regEl = $('chip-regime');
+  regEl.className = 'chip ' + (r === 'bull' ? 'bull' : r === 'bear' ? 'bear' : 'neutral');
+  regEl.textContent = (r === 'bull' ? '📈' : r === 'bear' ? '📉' : '📊') + ' ' + r.toUpperCase();
+
+  const detEl = $('regime-detail');
+  if (reg.price) {
+    const s50  = reg.above_sma50  === true  ? '✓ SMA50'  : reg.above_sma50  === false ? '✗ SMA50'  : '';
+    const s200 = reg.above_sma200 === true  ? '✓ SMA200' : reg.above_sma200 === false ? '✗ SMA200' : '';
+    detEl.style.display = 'flex';
+    detEl.textContent   = `${reg.benchmark || 'SPY'} $${(+reg.price).toFixed(2)}  ${s50}  ${s200}`.trim();
+  } else {
+    detEl.style.display = 'none';
+  }
+
+  $('btn-pause').className   = 'btn' + (isPaused ? ' success' : '');
+  $('btn-pause').textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+}
+
+function renderPortfolio(d) {
+  $('kpi-total').textContent = fmt(d.total_value);
+  $('kpi-cash').textContent  = fmt(d.free_funds ?? d.cash);
+  $('portfolio-mode').textContent = d.mode || '';
+}
+
+function renderPositions(d) {
+  const positions = Array.isArray(d.positions) ? d.positions : [];
+  $('pos-count').textContent = positions.length || '';
+  const body = $('positions-body');
+  if (!positions.length) {
+    body.innerHTML = '<div class="card-empty">No open positions</div>';
+    return;
+  }
+  body.innerHTML = positions.map(p => {
+    const plSign  = (p.pl || 0) >= 0 ? '+' : '';
+    const plClass = (p.pl || 0) >= 0 ? 'pos-text' : 'neg-text';
+    const plStr   = `${plSign}${fmt(p.pl)} (${plSign}${(p.plPct||0).toFixed(2)}%)`;
+
+    let holdBadge = '';
+    if (p.days_held != null) {
+      const warn = p.days_held >= (d.max_hold_days || 10);
+      holdBadge = `<span class="hold-badge${warn ? ' warn' : ''}">${p.days_held}d${warn ? ' ⚠' : ''}</span>`;
+    }
+
+    let barHtml = '';
+    if (p.stop_loss && p.take_profit && p.price) {
+      const range = p.take_profit - p.stop_loss;
+      const pct = range > 0 ? Math.max(0, Math.min(100, ((p.price - p.stop_loss) / range) * 100)) : 0;
+      barHtml = `
+        <div class="slt-wrap">
+          <div class="slt-bar"><div class="slt-fill" style="width:${pct.toFixed(1)}%"></div></div>
+          <div class="slt-labels">
+            <span>SL $${(+p.stop_loss).toFixed(2)}</span>
+            <span>entry $${(+p.avg).toFixed(2)}</span>
+            <span>TP $${(+p.take_profit).toFixed(2)}</span>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="pos-tile">
+        <div class="pos-top">
+          <div class="pos-sym">${p.symbol}${holdBadge}</div>
+          <div class="pos-pl ${plClass}">${plStr}</div>
+        </div>
+        <div class="pos-meta">${p.quantity} shares · avg $${(+p.avg).toFixed(2)} · now $${(+p.price).toFixed(2)}</div>
+        ${barHtml}
+      </div>`;
+  }).join('');
+}
+
+function renderDecisions(d) {
+  const decisions = Array.isArray(d.decisions) ? d.decisions.slice(0, 5) : [];
+  const body = $('decisions-body');
+  if (!decisions.length) {
+    body.innerHTML = '<div class="card-empty">No decisions recorded yet</div>';
+    return;
+  }
+  body.innerHTML = decisions.map(dec => {
+    const act   = (dec.action || 'HOLD').toUpperCase();
+    const conf  = dec.confidence > 0 ? `${(dec.confidence * 100).toFixed(0)}% conf` : '';
+    const rr    = dec.risk_reward ? `${(+dec.risk_reward).toFixed(1)}R` : '';
+    const setup = (dec.setup_type && dec.setup_type !== 'unknown') ? dec.setup_type : '';
+    const meta  = [conf, rr].filter(Boolean).join(' · ');
+    return `
+      <div class="dec-row">
+        <div class="dec-action ${act.toLowerCase()}">${act}</div>
+        <div>
+          <div class="dec-sym">${dec.symbol || '—'}</div>
+          ${setup ? `<div class="dec-setup">${setup}</div>` : ''}
+        </div>
+        <div class="dec-right" style="margin-left:auto;">
+          ${meta ? `<div class="dec-conf">${meta}</div>` : ''}
+          <div class="dec-time">${dec.at || ''}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function runCycle() {
+  const btn = $('btn-cycle');
+  btn.disabled = true; btn.textContent = '▶ Triggered…';
+  const r = await api('/api/bot/run_cycle', { method: 'POST', body: '{}' });
+  setTimeout(() => { btn.disabled = false; btn.textContent = '▶ Run Cycle'; }, 3000);
+  if (r?._status === 401) showLogin('Session expired — please sign in again.');
+}
+
+async function togglePause() {
+  const next = !isPaused;
+  isPaused = next;
+  $('btn-pause').textContent = next ? '▶ Resume' : '⏸ Pause';
+  $('btn-pause').className   = 'btn' + (next ? ' success' : '');
+  const r = await api('/api/bot/pause', {
+    method: 'POST', body: JSON.stringify({ paused: next }),
+  });
+  if (!r) {
+    isPaused = !next;
+    $('btn-pause').textContent = !next ? '▶ Resume' : '⏸ Pause';
+    $('btn-pause').className   = 'btn' + (!next ? ' success' : '');
+  } else if (r._status === 401) showLogin('Session expired — please sign in again.');
+}
+
+async function sleepPC() {
+  if (!confirm('Put the PC to sleep?\n\nYou will need to wake it manually (WoL or BIOS timer) afterwards.')) return;
+  const r = await api('/api/pc/sleep', { method: 'POST', body: '{}' });
+  if (r?._status === 401) showLogin('Session expired — please sign in again.');
+}
+
+async function initiateShutdown() {
+  if (!confirm('Shutdown the PC in 2 minutes?\n\nA Cancel button will appear on this screen.')) return;
+  const r = await api('/api/pc/shutdown', {
+    method: 'POST', body: JSON.stringify({ delay_seconds: 120 }),
+  });
+  if (r?._status === 401) { showLogin('Session expired — please sign in again.'); return; }
+  if (r?.ok) startCountdown(120);
+}
+
+async function cancelShutdown() {
+  clearInterval(shutdownTimer);
+  $('shutdown-bar').classList.remove('show');
+  await api('/api/pc/cancel_shutdown', { method: 'POST', body: '{}' });
+}
+
+function startCountdown(s) {
+  shutdownLeft = s;
+  $('shutdown-bar').classList.add('show');
+  _tick();
+  shutdownTimer = setInterval(() => {
+    shutdownLeft--;
+    if (shutdownLeft <= 0) { clearInterval(shutdownTimer); $('shutdown-bar').classList.remove('show'); return; }
+    _tick();
+  }, 1000);
+}
+function _tick() {
+  const m = Math.floor(shutdownLeft / 60), s = String(shutdownLeft % 60).padStart(2, '0');
+  $('shutdown-msg').textContent = `⏻ PC shutting down in ${m}:${s}…`;
+}
+
+// ── Settings modal ────────────────────────────────────────────────────────────
+function openSettings() {
+  $('inp-url').value = API_URL;
+  $('settings-modal').classList.add('show');
+  setTimeout(() => $('inp-url').focus(), 80);
+}
+function closeModal(id) { $(id).classList.remove('show'); }
+function overlayClick(e, id) { if (e.target === $(id)) closeModal(id); }
+
+function saveSettings() {
+  const url = $('inp-url').value.trim().replace(/\/$/, '');
+  if (!url) { alert('Please enter your Cloudflare tunnel URL.'); return; }
+  API_URL = url;
+  localStorage.setItem('stockbot_url', url);
+  closeModal('settings-modal');
+  // If we were on the login screen, re-trigger auto-login
+  if ($('login-modal').classList.contains('show')) {
+    TOKEN = '';
+    localStorage.removeItem('stockbot_token');
+    tryAutoLogin();
+  }
+}
+
+function clearEverything() {
+  if (!confirm('Clear saved URL and token, and sign out?')) return;
+  localStorage.removeItem('stockbot_url');
+  localStorage.removeItem('stockbot_token');
+  API_URL = ''; TOKEN = '';
+  closeModal('settings-modal');
+  showLogin();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+tryAutoLogin();
+setInterval(refreshData, 30000);
+</script>
+</body>
+</html>

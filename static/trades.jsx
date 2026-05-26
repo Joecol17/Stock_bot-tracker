@@ -34,26 +34,48 @@ const TradesPage = () => {
             No open positions
           </div>
         )}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(170px, 1fr))", gap:10 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(190px, 1fr))", gap:10 }}>
           {D.positions.map(p => {
             const fallbackSpark = sparks[p.symbol] || [p.avg || p.price, p.price];
+            const sl  = p.stop_loss;
+            const tp  = p.take_profit;
+            const price = p.price || 0;
+            // Progress bar: 0=at stop, 1=at target
+            const slRange = (sl && tp && tp > sl) ? (price - sl) / (tp - sl) : null;
             return (
               <div key={p.symbol} className="symbol-tile" style={{ minWidth: 0 }}>
                 <div className="top">
                   <span className="sym">{p.symbol}</span>
-                  <span className="name">{p.flag || ""}</span>
+                  <span className="dim mono" style={{ fontSize: 9 }}>
+                    {p.days_held != null ? `${p.days_held}d held` : p.flag || ""}
+                  </span>
                 </div>
                 <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
-                  <span className="price">${(p.price||0).toFixed(2)}</span>
+                  <span className="price">${price.toFixed(2)}</span>
                   <span className={`change ${p.plPct >= 0 ? "pos" : "neg"}`}>
                     {p.plPct >= 0 ? "▲" : "▼"} {Math.abs(p.plPct||0).toFixed(2)}%
                   </span>
                 </div>
-                <Sparkline points={fallbackSpark} color={p.plPct >= 0 ? "var(--pos)" : "var(--neg)"} w={170} h={28} full/>
+                <Sparkline points={fallbackSpark} color={p.plPct >= 0 ? "var(--pos)" : "var(--neg)"} w={190} h={28} full/>
                 <div className="mono dim" style={{ fontSize:10, display:"flex", justifyContent:"space-between" }}>
                   <span>×{p.quantity} @ ${(p.avg||0).toFixed(2)}</span>
                   <span className={p.pl >= 0 ? "pos" : "neg"}>{p.pl >= 0 ? "+" : "−"}${Math.abs(p.pl||0).toFixed(2)}</span>
                 </div>
+                {/* Stop/target progress */}
+                {slRange !== null && (
+                  <div style={{ marginTop: 5 }}>
+                    <div className="bar-track" style={{ height: 3 }}>
+                      <div className="bar-fill" style={{
+                        width: `${Math.max(0, Math.min(100, slRange * 100))}%`,
+                        background: slRange >= 0.75 ? "var(--pos)" : slRange <= 0 ? "var(--neg)" : "var(--accent)",
+                      }}/>
+                    </div>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:9, color:"var(--text-dim)", marginTop:2 }}>
+                      <span>SL ${sl.toFixed(2)}</span>
+                      <span>TP ${tp.toFixed(2)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -85,8 +107,10 @@ const TradesPage = () => {
                   <th>Time</th>
                   <th>Symbol</th>
                   <th>Decision</th>
+                  <th>Setup</th>
                   <th className="r">Conf.</th>
-                  <th className="r">Qty</th>
+                  <th className="r">R:R</th>
+                  <th className="r">Hold</th>
                   <th className="r">Price</th>
                   <th>Status</th>
                 </tr>
@@ -98,10 +122,15 @@ const TradesPage = () => {
                     <td className="mono dim">{d.at}</td>
                     <td className="mono"><b>{d.symbol}</b></td>
                     <td><span className={`dpill ${d.action.toLowerCase()}`}>{d.action}</span></td>
+                    <td>
+                      {d.setup_type && d.setup_type !== "unknown"
+                        ? <span className="chip" style={{ fontSize:9 }}>{(d.setup_type||"").replace(/_/g," ")}</span>
+                        : <span className="dim">—</span>}
+                    </td>
                     <td className="r mono">
                       {d.confidence > 0 ? (
-                        <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"flex-end" }}>
-                          <div className="bar-track" style={{ width: 48 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"flex-end" }}>
+                          <div className="bar-track" style={{ width: 36 }}>
                             <div className="bar-fill" style={{
                               width: `${d.confidence * 100}%`,
                               background: d.confidence >= 0.7 ? "var(--pos)" : d.confidence >= 0.55 ? "var(--accent)" : "var(--neg)"
@@ -111,7 +140,10 @@ const TradesPage = () => {
                         </div>
                       ) : <span className="dim">—</span>}
                     </td>
-                    <td className="r mono">{d.qty || "—"}</td>
+                    <td className="r mono" style={{ color: d.risk_reward >= 2 ? "var(--pos)" : d.risk_reward > 0 ? "var(--warn)" : "var(--text-dim)" }}>
+                      {d.risk_reward > 0 ? `${d.risk_reward}:1` : "—"}
+                    </td>
+                    <td className="r mono dim">{d.expected_hold_days ? `${d.expected_hold_days}d` : "—"}</td>
                     <td className="r mono">${(d.price||0).toFixed(2)}</td>
                     <td><span className={`chip ${d.status === "filled" ? "pos" : d.status === "blocked" ? "neg" : ""}`}>{d.status}</span></td>
                   </tr>
@@ -134,10 +166,53 @@ const TradesPage = () => {
 
             <div className="divider"/>
 
+            {/* Setup type + hold */}
+            {(selected.setup_type && selected.setup_type !== "unknown") && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                <span className="chip">{(selected.setup_type||"").replace(/_/g," ")}</span>
+                {selected.expected_hold_days && (
+                  <span className="chip dim">~{selected.expected_hold_days}d hold</span>
+                )}
+                {selected.risk_reward > 0 && (
+                  <span className="chip" style={{ color: selected.risk_reward >= 2 ? "var(--pos)" : "var(--warn)" }}>
+                    {selected.risk_reward}:1 R:R
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Stop / target */}
+            {(selected.stop_loss_price || selected.take_profit_price) && (
+              <div>
+                <div className="mono dim" style={{ fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:6 }}>Price targets</div>
+                <div style={{ display:"flex", gap:16, fontFamily:"var(--mono)", fontSize:12 }}>
+                  <div>
+                    <div style={{ color:"var(--text-dim)", fontSize:10 }}>STOP LOSS</div>
+                    <div style={{ color:"var(--neg)", fontWeight:600 }}>${selected.stop_loss_price ? selected.stop_loss_price.toFixed(2) : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color:"var(--text-dim)", fontSize:10 }}>ENTRY</div>
+                    <div style={{ fontWeight:600 }}>${selected.price ? selected.price.toFixed(2) : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color:"var(--text-dim)", fontSize:10 }}>TARGET</div>
+                    <div style={{ color:"var(--pos)", fontWeight:600 }}>${selected.take_profit_price ? selected.take_profit_price.toFixed(2) : "—"}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div>
               <div className="mono dim" style={{ fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom: 6 }}>Reasoning</div>
               <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>{selected.reason || "—"}</div>
             </div>
+
+            {selected.risk_notes && (
+              <div>
+                <div className="mono dim" style={{ fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", marginBottom: 6 }}>Risk notes</div>
+                <div style={{ fontSize: 12, color: "var(--warn)", lineHeight: 1.5 }}>{selected.risk_notes}</div>
+              </div>
+            )}
 
             {selected.confidence > 0 && (
               <div>

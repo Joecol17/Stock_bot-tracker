@@ -47,6 +47,25 @@ const OverviewPage = ({ tweaks }) => {
   const failedDec  = D.decisions.filter(d => d.status === "blocked").length;
   const failRate   = totalDec > 0 ? failedDec / totalDec : 0;
 
+  // Market regime
+  const regime     = D.regime || {};
+  const regimeLabel= regime.regime || "unknown";
+  const regimeColor= regimeLabel === "bull" ? "var(--pos)" : regimeLabel === "bear" ? "var(--neg)" : "var(--warn)";
+  const regimeIcon = regimeLabel === "bull" ? "▲" : regimeLabel === "bear" ? "▼" : "○";
+
+  // Swing stats
+  const avgHoldDays = useMemo(() => {
+    const held = D.decisions.filter(d => d.expected_hold_days > 0);
+    return held.length ? Math.round(held.reduce((s, d) => s + d.expected_hold_days, 0) / held.length) : null;
+  }, [D.decisions]);
+  const avgRR = useMemo(() => {
+    const rr = D.decisions.filter(d => d.risk_reward > 0);
+    return rr.length ? (rr.reduce((s, d) => s + d.risk_reward, 0) / rr.length).toFixed(1) : null;
+  }, [D.decisions]);
+  const longestHeld = D.positions.reduce((best, p) => {
+    return (p.days_held != null && (best == null || p.days_held > best.days_held)) ? p : best;
+  }, null);
+
   // Pipeline: real step from bot_state (0=idle, 1=risk, 2=screen, 3=fetch, 4=ollama, 5=execute)
   // Map to the 5 display steps (indices 0-4)
   const stepIdx = D.step > 0 ? D.step - 1 : -1;  // -1 = idle
@@ -87,6 +106,47 @@ const OverviewPage = ({ tweaks }) => {
           </React.Fragment>
         ))}
         <span style={{ marginLeft: "auto" }} className="dim">{now.toLocaleTimeString("en-GB")} · UTC</span>
+      </div>
+
+      {/* Market Regime Banner */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 16,
+        padding: "10px 16px",
+        background: "var(--bg-elev)",
+        border: "1px solid var(--border-soft)",
+        borderRadius: "var(--radius)",
+        fontFamily: "var(--mono)", fontSize: 12,
+      }}>
+        <span style={{ color: "var(--text-dim)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>Market Regime</span>
+        <span style={{
+          fontWeight: 700, fontSize: 13, color: regimeColor,
+          display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: regimeColor, display: "inline-block" }}/>
+          {regimeLabel.toUpperCase()}
+        </span>
+        {regime.benchmark && (
+          <span className="dim">{regime.benchmark} · ${(regime.price||0).toFixed(2)}</span>
+        )}
+        {regime.sma50 > 0 && (
+          <span style={{ color: regime.above_sma50 ? "var(--pos)" : "var(--neg)" }}>
+            SMA50 ${(regime.sma50||0).toFixed(0)} {regime.above_sma50 ? "✓" : "✗"}
+          </span>
+        )}
+        {regime.sma200 > 0 && (
+          <span style={{ color: regime.above_sma200 ? "var(--pos)" : "var(--neg)" }}>
+            SMA200 ${(regime.sma200||0).toFixed(0)} {regime.above_sma200 ? "✓" : "✗"}
+          </span>
+        )}
+        <span style={{ marginLeft: "auto", color: "var(--text-dim)" }}>
+          Risk/trade: <b style={{ color: "var(--text)" }}>{((D.risk_per_trade_pct||0.01)*100).toFixed(0)}%</b>
+          &nbsp;·&nbsp;
+          ATR stop: <b style={{ color: "var(--text)" }}>{D.atr_stop_multiplier||1.5}×</b>
+          &nbsp;·&nbsp;
+          Min R:R: <b style={{ color: "var(--text)" }}>{D.min_risk_reward||2}:1</b>
+          &nbsp;·&nbsp;
+          Filter gate: <b style={{ color: "var(--text)" }}>{D.min_filter_score||2}/4</b>
+        </span>
       </div>
 
       {/* KPIs */}
@@ -146,7 +206,12 @@ const OverviewPage = ({ tweaks }) => {
               ? `${D.step_name || "running"}${D.current_symbol ? " · " + D.current_symbol : ""}`
               : `idle · cycle #${D.cycle || 0}`}
           </span>
-          <span className="meta">every {Math.round((D.cycle_interval||300)/60)} min · last @ {lastCycleTime}</span>
+          <span className="meta">
+            {(D.cycle_interval||86400) >= 3600
+              ? `every ${Math.round((D.cycle_interval||86400)/3600)}h`
+              : `every ${Math.round((D.cycle_interval||86400)/60)} min`}
+            {" · last @ "}{lastCycleTime}
+          </span>
         </div>
         <div className="card-body">
           {/* Connected-dot progress track */}
@@ -258,7 +323,7 @@ const OverviewPage = ({ tweaks }) => {
 
         <div className="card">
           <div className="card-head">
-            <h3>Risk & safety</h3>
+            <h3>Risk & swing stats</h3>
             <span className={`chip ${failRate > 0.2 ? "neg" : "pos"}`}>{failRate > 0.2 ? "warning" : "all clear"}</span>
           </div>
           <div className="card-body" style={{ display:"flex", flexDirection:"column", gap: 14 }}>
@@ -269,20 +334,20 @@ const OverviewPage = ({ tweaks }) => {
               tone={totalDec / maxDaily > 0.8 ? "warn" : "info"}
             />
             <RiskRow
-              label="Free funds threshold"
-              value={`$${(D.free_funds||D.cash||0).toFixed(0)}  /  $${D.min_account_value||100} min`}
+              label="Free funds"
+              value={`$${(D.free_funds||D.cash||0).toFixed(0)}  /  min $${D.min_account_value||100}`}
               pct={D.min_account_value > 0 ? Math.min(1, (D.free_funds||D.cash||0) / (D.min_account_value * 20)) : 1}
               tone="pos"
             />
             <RiskRow
-              label="Max position concentration"
-              value={maxPos ? `${maxPos.symbol} · ${(maxPosPct*100).toFixed(1)}%` : "—"}
+              label="Largest position"
+              value={maxPos ? `${maxPos.symbol} · ${(maxPosPct*100).toFixed(1)}% of portfolio` : "—"}
               pct={maxPosPct}
               tone={maxPosPct > 0.4 ? "warn" : maxPosPct > 0.25 ? "accent" : "pos"}
             />
             <RiskRow
-              label="Decision confidence"
-              value={avgConf > 0 ? `${avgConf.toFixed(2)} avg` : "no data"}
+              label="Avg model confidence"
+              value={avgConf > 0 ? `${(avgConf*100).toFixed(0)}%` : "no data"}
               pct={avgConf}
               tone={avgConf >= 0.7 ? "pos" : avgConf >= 0.5 ? "accent" : "neg"}
             />
@@ -293,27 +358,45 @@ const OverviewPage = ({ tweaks }) => {
               tone={failRate > 0.2 ? "neg" : "pos"}
             />
             <div className="divider"/>
+            {/* Swing accountability rows */}
+            <div className="kv">
+              <span className="k">Avg hold target</span>
+              <span className="v mono">{avgHoldDays != null ? `${avgHoldDays} day${avgHoldDays !== 1 ? "s" : ""}` : "—"}</span>
+            </div>
+            <div className="kv">
+              <span className="k">Avg R:R (decisions)</span>
+              <span className="v mono" style={{ color: avgRR >= D.min_risk_reward ? "var(--pos)" : "var(--warn)" }}>
+                {avgRR != null ? `${avgRR}:1` : "—"}
+                {D.min_risk_reward && avgRR != null && (
+                  <span className="dim" style={{ fontSize:10, marginLeft: 5 }}>min {D.min_risk_reward}:1</span>
+                )}
+              </span>
+            </div>
+            <div className="kv">
+              <span className="k">Longest held</span>
+              <span className="v mono" style={{ color: longestHeld && longestHeld.days_held >= (D.max_hold_days||10) ? "var(--warn)" : "var(--text)" }}>
+                {longestHeld ? `${longestHeld.symbol} · ${longestHeld.days_held}d` : "—"}
+                {longestHeld && longestHeld.days_held >= (D.max_hold_days||10) && (
+                  <span className="chip warn" style={{ marginLeft: 6, fontSize: 9 }}>review</span>
+                )}
+              </span>
+            </div>
+            <div className="divider"/>
             <div className="kv">
               <span className="k">Mode</span>
               <span className="v">
                 <span className={`chip ${D.mode === "LIVE" ? "pos" : "warn"}`}>
-                  {D.mode || "DEMO"} · {D.mode === "LIVE" ? "live trading" : "practice"}
+                  {D.mode || "DEMO"} · {D.mode === "LIVE" ? "live" : "practice"}
                 </span>
               </span>
             </div>
             <div className="kv">
               <span className="k">Model</span>
-              <span className="v mono">{D.model || "llama2"} · t={D.temperature || 0.2} · max {D.max_tokens || 256}</span>
+              <span className="v mono">{D.model || "llama2"} · t={D.temperature || 0.2}</span>
             </div>
             <div className="kv">
-              <span className="k">Watchlist</span>
-              <span className="v mono" style={{ fontSize:11, wordBreak:"break-all" }}>
-                {D.positions.length > 0 ? D.positions.map(p => p.symbol).join(" · ") : "—"}
-              </span>
-            </div>
-            <div className="kv">
-              <span className="k">Cycle</span>
-              <span className="v mono">#{D.cycle || 0} · {D.step_name || "idle"}{D.current_symbol ? ` (${D.current_symbol})` : ""}</span>
+              <span className="k">Filter gate</span>
+              <span className="v mono">{D.min_filter_score||2}/4 filters · earnings buffer {D.earnings_buffer_days||5}d</span>
             </div>
           </div>
         </div>

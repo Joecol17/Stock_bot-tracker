@@ -32,6 +32,9 @@ window.BotData = {
   uptime_seconds: 0,
   last_cycle_time: "",
   avg_confidence: 0,
+  tunnel_url: null,      // set by tunnel_helper.py (Cloudflare public URL)
+  paused: false,
+  regime: { regime: "unknown" },
 };
 
 async function _fetchBotData() {

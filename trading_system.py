@@ -20,25 +20,29 @@ class TradingSystem:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
         ollama_model: Optional[str] = None,
         is_demo: bool = True,
     ):
         """
         Initialize the trading system.
-        
+
         Args:
             api_key: Trading 212 API key (uses env var if not provided)
+            api_secret: Trading 212 API secret (uses env var if not provided)
             ollama_model: Ollama model to use for decisions
             is_demo: Use demo/practice account (default: True)
         """
         # Load API key from env if not provided
         if not api_key:
             api_key = load_api_key_from_env()
-        
+        if not api_secret:
+            api_secret = Config.TRADING212_API_SECRET
+
         # Initialize components
         self.ollama_client = OllamaClient(model_name=ollama_model)
         self.decision_engine = DecisionEngine(self.ollama_client)
-        self.trading_client = Trading212Client(api_key, is_demo=is_demo)
+        self.trading_client = Trading212Client(api_key, api_secret=api_secret, is_demo=is_demo)
         self.executor = OrderExecutor(self.trading_client)
         
         self.is_demo = is_demo
@@ -49,44 +53,52 @@ class TradingSystem:
         symbol: str,
         context: Dict[str, Any],
         quantity: float = 1,
+        account_value: float = 0,
     ) -> Dict[str, Any]:
         """
-        Analyze market context and execute a trade if appropriate.
-        
+        Analyze market context and execute a swing trade if appropriate.
+
         Args:
-            symbol: Stock symbol
-            context: Market context (price, trend, news, etc.)
-            quantity: Number of shares to trade
-            
-        Returns:
-            Analysis and execution results
+            symbol:        Stock symbol
+            context:       Daily-bar market context from get_market_context()
+            quantity:      Fallback fixed quantity (used only if risk-based sizing fails)
+            account_value: Total portfolio value — used for % risk position sizing
         """
-        # Make trading decision
-        question = f"Based on this context, should the system buy, sell, or hold {symbol}?"
+        question = (
+            f"Based on this daily-bar context, should the swing trading system "
+            f"BUY, SELL, or HOLD {symbol}? "
+            f"If BUY or SELL, provide exact stop_loss_price and take_profit_price."
+        )
         decision = self.decision_engine.make_decision(context, question)
-        
-        # Execute trade based on decision
-        execution = self.executor.execute_decision(decision, symbol, quantity)
-        
-        # Log the trade
+
+        execution = self.executor.execute_decision(
+            decision,
+            symbol,
+            quantity,
+            account_value=account_value,
+            context=context,
+        )
+
         trade_record = {
-            "symbol": symbol,
+            "symbol":   symbol,
             "decision": decision,
             "execution": {
-                "success": execution.success,
-                "action": execution.action,
-                "quantity": execution.quantity,
-                "message": execution.message,
-                "order_id": execution.order_id,
-                "error": execution.error,
+                "success":    execution.success,
+                "action":     execution.action,
+                "quantity":   execution.quantity,
+                "message":    execution.message,
+                "order_id":   execution.order_id,
+                "error":      execution.error,
+                "confidence": execution.confidence,
+                "price":      execution.price,
             },
         }
         self.trade_log.append(trade_record)
-        
+
         return {
-            "symbol": symbol,
-            "context": context,
-            "decision": decision,
+            "symbol":    symbol,
+            "context":   context,
+            "decision":  decision,
             "execution": trade_record["execution"],
         }
 
