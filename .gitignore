@@ -15,3 +15,10 @@ venv/
 # Bot output
 trading_bot.log
 trade_history.json
+
+# Runtime state files (written at run-time, not part of source)
+bot_state.json
+bot_control.json
+tunnel_url.txt
+launcher.log
+cloudflared.exe

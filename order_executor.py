@@ -19,6 +19,8 @@ class ExecutionResult:
     message: str
     order_id: Optional[str] = None
     error: Optional[str] = None
+    price: float = 0.0       # fill / context price recorded at execution
+    confidence: float = 0.0  # LLM confidence (0.0–1.0)
 
 
 class OrderExecutor:
@@ -39,24 +41,93 @@ class OrderExecutor:
         decision: Dict[str, Any],
         symbol: str,
         quantity: float = 1,
+        account_value: float = 0,
+        context: Dict[str, Any] = None,
     ) -> ExecutionResult:
         """
-        Execute a trade from a DecisionEngine output dict.
+        Execute a swing trade from a DecisionEngine output dict.
 
-        decision structure from make_decision():
-          { "model": ..., "raw_text": ..., "decision": {"action": "BUY", ...} }
+        Adds vs the old version:
+          - Reads stop_loss_price / take_profit_price from LLM JSON
+          - Falls back to ATR-based stops if LLM doesn't supply prices
+          - Calculates quantity from % portfolio risk ÷ per-share risk
+          - Persists accountability fields: setup_type, expected_hold_days, R:R
         """
+        context = context or {}
         try:
             action = self._extract_action(decision)
+            inner  = decision.get("decision", {}) if isinstance(decision.get("decision"), dict) else {}
 
+            # ── Confidence ─────────────────────────────────────────────────
+            try:
+                confidence = max(0.0, min(1.0, float(inner.get("confidence", 0.0) or 0.0)))
+            except (TypeError, ValueError):
+                confidence = 0.0
+
+            # ── Stop / target prices from LLM (with ATR fallback) ──────────
+            entry_price = float(context.get("price", 0) or 0)
+            atr         = float(context.get("atr_14", 0) or 0)
+
+            llm_stop   = inner.get("stop_loss_price")
+            llm_target = inner.get("take_profit_price")
+
+            try:
+                stop_price = float(llm_stop) if llm_stop else None
+            except (TypeError, ValueError):
+                stop_price = None
+
+            try:
+                target_price = float(llm_target) if llm_target else None
+            except (TypeError, ValueError):
+                target_price = None
+
+            # ATR-based fallback
+            if entry_price > 0 and atr > 0:
+                if stop_price is None:
+                    stop_price = round(entry_price - atr * Config.ATR_STOP_MULTIPLIER, 4)
+                if target_price is None:
+                    target_price = round(entry_price + atr * Config.ATR_STOP_MULTIPLIER * Config.MIN_RISK_REWARD, 4)
+
+            # Final fallback: percentage-based
+            if stop_price is None and entry_price > 0:
+                stop_price = round(entry_price * (1 - Config.STOP_LOSS_PCT), 4)
+            if target_price is None and entry_price > 0:
+                target_price = round(entry_price * (1 + Config.TAKE_PROFIT_PCT), 4)
+
+            # ── Risk-based quantity sizing ──────────────────────────────────
+            if action == "BUY" and account_value > 0 and stop_price and entry_price > stop_price:
+                risk_dollars  = account_value * Config.RISK_PER_TRADE_PCT
+                per_share_risk = entry_price - stop_price
+                sized_qty      = max(1, int(risk_dollars / per_share_risk))
+                # Cap at MAX_POSITION_PCT of portfolio
+                max_value = account_value * Config.MAX_POSITION_PCT
+                max_qty   = max(1, int(max_value / entry_price)) if entry_price > 0 else sized_qty
+                quantity  = min(sized_qty, max_qty)
+            # else: use the fallback quantity passed in
+
+            # ── Accountability metadata ─────────────────────────────────────
+            setup_type        = inner.get("setup_type", "unknown") or "unknown"
+            expected_hold_days = None
+            try:
+                expected_hold_days = int(inner.get("expected_hold_days", 0) or 0) or None
+            except (TypeError, ValueError):
+                pass
+            risk_reward = None
+            if stop_price and target_price and entry_price and entry_price > stop_price:
+                risk_reward = round((target_price - entry_price) / (entry_price - stop_price), 2)
+
+            reasoning  = inner.get("reasoning", "")
+            risk_notes = inner.get("risk_notes", "")
+
+            # ── Execution ──────────────────────────────────────────────────
             if action == "BUY":
-                result = self._execute_buy(symbol, quantity)
+                result = self._execute_buy(symbol, quantity, stop_price, target_price)
             elif action == "SELL":
                 result = self._execute_sell(symbol, quantity)
             elif action == "HOLD":
                 result = ExecutionResult(
                     success=True, symbol=symbol, action="HOLD",
-                    quantity=0, message="Holding position as per decision",
+                    quantity=0, message="HOLD — no qualifying setup",
                 )
             else:
                 result = ExecutionResult(
@@ -64,6 +135,23 @@ class OrderExecutor:
                     quantity=quantity, message=f"Unknown action: {action}",
                     error=f"Unknown action: {action}",
                 )
+
+            # Attach metadata to result for _save_history
+            result.confidence         = confidence
+            result.setup_type         = setup_type
+            result.expected_hold_days = expected_hold_days
+            result.stop_loss_price    = stop_price
+            result.take_profit_price  = target_price
+            result.risk_reward        = risk_reward
+            result.reasoning          = reasoning
+            result.risk_notes         = risk_notes
+            result.context_snapshot   = {
+                k: context.get(k) for k in (
+                    "rsi_14", "macd_crossover", "price_vs_sma50_pct",
+                    "atr_14", "bb_position", "volume", "trend",
+                    "pre_trade_filters",
+                ) if context.get(k) is not None
+            }
 
             self._save_history(result)
             return result
@@ -117,26 +205,44 @@ class OrderExecutor:
         current_prices = {p.instrument_code: p.current_price for p in positions}
         results: List[ExecutionResult] = []
 
+        today = datetime.utcnow().date()
+
         for symbol, tracking in list(self._tracked_positions.items()):
             if symbol not in current_prices:
-                # Position closed externally — stop tracking it
                 del self._tracked_positions[symbol]
                 continue
 
             price = current_prices[symbol]
-            hit = None
+            hit   = None
+
             if price <= tracking["stop_loss"]:
                 hit = "STOP_LOSS"
             elif price >= tracking["take_profit"]:
                 hit = "TAKE_PROFIT"
 
+            # Max-hold-days warning (log only — does not force exit)
+            entry_date_str = tracking.get("entry_date")
+            if entry_date_str and not hit:
+                try:
+                    from datetime import date
+                    entry_date = date.fromisoformat(entry_date_str)
+                    days_held  = (today - entry_date).days
+                    if days_held >= Config.MAX_HOLD_DAYS:
+                        import logging as _log
+                        _log.getLogger(__name__).warning(
+                            f"[REVIEW] {symbol} has been held {days_held} days "
+                            f"(max {Config.MAX_HOLD_DAYS}). Consider reviewing the position."
+                        )
+                except Exception:
+                    pass
+
             if hit:
                 result = self._execute_sell(symbol, tracking["quantity"])
                 result.action = hit
                 entry = tracking["entry_price"]
-                pct = round((price - entry) / entry * 100, 2)
+                pct   = round((price - entry) / entry * 100, 2)
                 result.message = (
-                    f"{hit}: sold {tracking['quantity']} {symbol} at ${price:.4f} "
+                    f"{hit}: sold {tracking['quantity']} {symbol} @ ${price:.4f} "
                     f"(entry ${entry:.4f}, {pct:+.2f}%)"
                 )
                 self._save_history(result)
@@ -186,7 +292,13 @@ class OrderExecutor:
 
         return "HOLD"
 
-    def _execute_buy(self, symbol: str, quantity: float) -> ExecutionResult:
+    def _execute_buy(
+        self,
+        symbol: str,
+        quantity: float,
+        stop_price: Optional[float] = None,
+        target_price: Optional[float] = None,
+    ) -> ExecutionResult:
         try:
             account = self.client.get_account_info()
             if account.free_funds <= 0:
@@ -201,13 +313,14 @@ class OrderExecutor:
             )
             order_id = str(response.get("id") or response.get("orderId") or "")
 
-            # Fetch fill price and register SL/TP tracking
-            self._register_position(symbol, quantity)
+            self._register_position(symbol, quantity, stop_price, target_price)
+            fill_price = self._tracked_positions.get(symbol, {}).get("entry_price", 0.0)
 
             return ExecutionResult(
                 success=True, symbol=symbol, action="BUY", quantity=quantity,
-                message=f"BUY order placed: {quantity} shares of {symbol}",
+                message=f"BUY {quantity} {symbol} @ ~${fill_price:.2f} | stop ${stop_price} → target ${target_price}",
                 order_id=order_id,
+                price=fill_price,
             )
 
         except Exception as e:
@@ -216,24 +329,34 @@ class OrderExecutor:
                 message=f"BUY order failed: {e}", error=str(e),
             )
 
-    def _register_position(self, symbol: str, quantity: float) -> None:
-        """Record entry price and SL/TP levels for a newly bought position."""
-        time.sleep(1)  # brief wait for the order to settle before fetching position
+    def _register_position(
+        self,
+        symbol: str,
+        quantity: float,
+        stop_price: Optional[float] = None,
+        target_price: Optional[float] = None,
+    ) -> None:
+        """Record entry price, SL/TP levels, and entry date for a newly bought position."""
+        time.sleep(1)
         try:
             positions = self.client.get_positions()
             pos = next((p for p in positions if p.instrument_code == symbol), None)
-            entry = pos.average_price if pos else None
+            entry = float(pos.average_price) if pos else None
         except Exception:
             entry = None
 
         if not entry or entry <= 0:
-            return  # can't track without a valid entry price
+            return
+
+        sl = stop_price  or round(entry * (1 - Config.STOP_LOSS_PCT), 4)
+        tp = target_price or round(entry * (1 + Config.TAKE_PROFIT_PCT), 4)
 
         self._tracked_positions[symbol] = {
             "entry_price": entry,
-            "stop_loss": round(entry * (1 - Config.STOP_LOSS_PCT), 4),
-            "take_profit": round(entry * (1 + Config.TAKE_PROFIT_PCT), 4),
-            "quantity": quantity,
+            "stop_loss":   sl,
+            "take_profit": tp,
+            "quantity":    quantity,
+            "entry_date":  datetime.utcnow().strftime("%Y-%m-%d"),
         }
 
     def _execute_sell(self, symbol: str, quantity: float) -> ExecutionResult:
@@ -249,6 +372,7 @@ class OrderExecutor:
                     error=f"Only {available} shares available",
                 )
 
+            sell_price = float(position.current_price or 0.0) if position else 0.0
             response = self.client.place_order(
                 symbol=symbol, quantity=quantity,
                 side=OrderSide.SELL, order_type=OrderType.MARKET,
@@ -258,6 +382,7 @@ class OrderExecutor:
                 success=True, symbol=symbol, action="SELL", quantity=quantity,
                 message=f"SELL order placed: {quantity} shares of {symbol}",
                 order_id=order_id,
+                price=sell_price,
             )
 
         except Exception as e:
@@ -284,14 +409,28 @@ class OrderExecutor:
             return  # Don't clutter the log with holds
 
         record = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "symbol": result.symbol,
-            "action": result.action,
-            "quantity": result.quantity,
-            "success": result.success,
-            "message": result.message,
-            "order_id": result.order_id,
-            "error": result.error,
+            # Core
+            "timestamp":  datetime.utcnow().isoformat(),
+            "symbol":     result.symbol,
+            "action":     result.action,
+            "quantity":   result.quantity,
+            "price":      round(float(result.price or 0.0), 4),
+            "success":    result.success,
+            "message":    result.message,
+            "order_id":   result.order_id,
+            "error":      result.error,
+            # LLM quality
+            "confidence":          round(float(result.confidence or 0.0), 4),
+            "reasoning":           getattr(result, "reasoning", ""),
+            "risk_notes":          getattr(result, "risk_notes", ""),
+            # Swing accountability
+            "setup_type":          getattr(result, "setup_type", "unknown"),
+            "expected_hold_days":  getattr(result, "expected_hold_days", None),
+            "stop_loss_price":     getattr(result, "stop_loss_price", None),
+            "take_profit_price":   getattr(result, "take_profit_price", None),
+            "risk_reward":         getattr(result, "risk_reward", None),
+            # Snapshot of the key signals at entry (for post-trade review)
+            "context_snapshot":    getattr(result, "context_snapshot", {}),
         }
         self.trade_history.append(record)
         try:
