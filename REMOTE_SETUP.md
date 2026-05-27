@@ -105,9 +105,21 @@ Requires either:
 ### Option A — Quick Tunnel (temporary, no setup needed)
 - `setup_remote.bat` downloads `cloudflared.exe` automatically
 - When the bot starts, a public URL like `https://random-name.trycloudflare.com` appears in the dashboard sidebar
-- **The URL changes every restart** — use Option B for a permanent URL
+- **The URL changes every restart** — use Option B or C for a permanent URL
 
-### Option B — Named Tunnel (permanent URL, recommended) ⭐
+### Option B — ngrok free static domain (permanent, 100% free) ⭐
+Run **`setup_ngrok.bat`** — completely free, no credit card, takes ~5 minutes:
+
+1. Double-click **`setup_ngrok.bat`**
+2. It downloads ngrok and opens [dashboard.ngrok.com/signup](https://dashboard.ngrok.com/signup) instructions
+3. You paste your authtoken (from the ngrok dashboard)
+4. Go to [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains) → click **New Domain** → copy your free domain (e.g. `proud-rabbit-definitely.ngrok-free.app`)
+5. Paste it in the wizard → done
+
+Your permanent URL is saved to `.env` and `docs/config.js` automatically.  
+**Every free ngrok account gets one free static domain.** It never changes.
+
+### Option C — Named Tunnel (permanent URL, needs a domain) ⭐
 Run **`setup_named_tunnel.bat`** — it's an interactive wizard that does everything:
 
 1. **`setup_remote.bat`** first (downloads `cloudflared.exe`) — if not done already
@@ -131,7 +143,7 @@ Run **`setup_named_tunnel.bat`** — it's an interactive wizard that does everyt
 Once set up, the bot uses the named tunnel automatically on every start.
 The URL is saved in `docs/config.js` so the GitHub Pages remote dashboard always points to it.
 
-### Option C — Tailscale (simplest for private access)
+### Option D — Tailscale (simplest for private access)
 1. Install Tailscale on PC and phone: tailscale.com
 2. Sign in with same account on both devices
 3. Access dashboard at `http://your-tailscale-ip:5000`
