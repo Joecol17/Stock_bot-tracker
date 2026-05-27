@@ -19,6 +19,11 @@ trade_history.json
 # Runtime state files (written at run-time, not part of source)
 bot_state.json
 bot_control.json
+symbol_queue.json
+symbol_prefs.json
 tunnel_url.txt
 launcher.log
 cloudflared.exe
+
+# Claude Code internal workspace (worktrees, settings)
+.claude/
