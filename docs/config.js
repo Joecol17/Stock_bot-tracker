@@ -1,19 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Stock Bot Remote Dashboard — Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// You have two ways to configure the remote dashboard:
-//
-//  A) Edit this file and commit it to GitHub (recommended for Named Tunnel).
-//     Replace the placeholder URL below with your Cloudflare Named Tunnel URL.
-//     Leave STOCKBOT_TOKEN blank if you have not set DASHBOARD_SECRET in .env.
-//
-//  B) Leave this file as-is. On first visit the dashboard shows a ⚙ Settings
-//     panel where you can enter the URL and token directly. These are saved in
-//     localStorage and persist across visits on that device.
-//
-// IMPORTANT — do NOT commit your Trading 212 API key here.
-// ─────────────────────────────────────────────────────────────────────────────
 
+// URL of your ngrok static domain (set by setup_ngrok.bat)
 window.STOCKBOT_API_URL = "https://defeat-cataract-movable.ngrok-free.dev";
-window.STOCKBOT_TOKEN   = "";   // matches DASHBOARD_SECRET in .env (optional)
+
+// Optional bearer token — matches DASHBOARD_SECRET in .env
+window.STOCKBOT_TOKEN   = "";
+
+// ── Wake on LAN relay ─────────────────────────────────────────────────────────
+// Set WAKE_RELAY_URL after deploying wol_relay/ to Render.com (see README).
+// Leave blank to hide the Wake PC button (you can still use a WoL phone app).
+window.WAKE_RELAY_URL   = "";   // e.g. "https://stockbot-wol.onrender.com"
+
+// Optional secret — must match WAKE_SECRET env var on Render.
+window.WAKE_TOKEN       = "";
+
+// Your PC's MAC address — shown on the offline screen so you can copy it into
+// a WoL app. Not required if you use the relay. Safe to commit (it's local-only).
+window.PC_MAC           = "BC-F4-D4-A9-18-D1";

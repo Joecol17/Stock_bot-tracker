@@ -228,6 +228,32 @@
       text-align:center; margin-bottom:10px;
     }
 
+    /* ── Offline / boot panel ─────────────────────────────────────────── */
+    .offline-box {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius); padding:32px 24px;
+      width:100%; max-width:380px; text-align:center;
+    }
+    .offline-icon  { font-size:52px; line-height:1; margin-bottom:16px; }
+    .offline-title { font-size:18px; font-weight:700; margin-bottom:8px; }
+    .offline-sub   { font-size:12px; color:var(--dim); line-height:1.6; margin-bottom:20px; }
+    .mac-badge {
+      display:inline-block; background:var(--surface2);
+      border:1px solid var(--border); border-radius:6px;
+      padding:8px 14px; font-family:var(--mono); font-size:13px;
+      font-weight:700; letter-spacing:.05em; margin-bottom:18px;
+    }
+    .poll-row { font-size:12px; color:var(--mute); margin-top:12px; }
+    .boot-bar-wrap {
+      margin:16px 0 4px; height:3px; background:var(--border); border-radius:2px;
+    }
+    .boot-bar-fill {
+      height:100%; background:var(--info); border-radius:2px;
+      width:0%; transition:width 160s linear;
+    }
+    @keyframes spinPoll { to { transform:rotate(360deg); } }
+    .poll-spin { display:inline-block; animation:spinPoll .8s linear infinite; }
+
     /* ── Footer ────────────────────────────────────────────────────────── */
     .footer { text-align:center; font-size:10px; color:var(--mute); padding:14px 12px; }
 
@@ -336,6 +362,42 @@
   </div>
 
   <div class="footer" id="footer">Never refreshed</div>
+</div>
+
+<!-- ── PC Offline / Booting panel ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="offline-panel">
+  <div class="offline-box">
+    <div class="offline-icon" id="ol-icon">💤</div>
+    <div class="offline-title" id="ol-title">PC is offline</div>
+    <div class="offline-sub"   id="ol-sub">The trading bot isn't running.<br>Wake the PC to connect.</div>
+
+    <!-- Wake button — shown only if WAKE_RELAY_URL is set in config.js -->
+    <div id="wake-section" style="display:none; margin-bottom:14px;">
+      <button class="btn primary full" id="wake-btn" onclick="wakePC()">⚡ Wake PC</button>
+      <div class="poll-row" id="wake-msg" style="min-height:16px;"></div>
+    </div>
+
+    <!-- MAC address hint — shown when no relay is configured -->
+    <div id="mac-section" style="display:none; margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:6px;">Use your WoL app — MAC address:</div>
+      <div class="mac-badge" id="mac-display">—</div>
+    </div>
+
+    <!-- Boot progress bar (appears after Wake PC is clicked) -->
+    <div id="boot-progress" style="display:none;">
+      <div class="boot-bar-wrap"><div class="boot-bar-fill" id="boot-bar"></div></div>
+      <div style="font-size:10px;color:var(--mute);margin-top:4px;">Typically ready in 2–3 minutes</div>
+    </div>
+
+    <!-- Auto-poll status -->
+    <div class="poll-row">
+      <span class="poll-spin" id="poll-spin">↻</span>
+      <span id="poll-label"> Checking for connection…</span>
+    </div>
+    <div class="poll-row" id="poll-cd" style="margin-top:3px;"></div>
+
+    <button class="link-btn" onclick="openSettings()" style="margin-top:18px;">⚙ Change server URL</button>
+  </div>
 </div>
 
 <!-- ── Login modal ─────────────────────────────────────────────────────────── -->
@@ -529,24 +591,21 @@ function logout() {
 // ── Try token we already have ─────────────────────────────────────────────────
 async function tryAutoLogin() {
   if (!API_URL) {
-    // No URL configured — show login (which will prompt for URL first)
     showLogin();
     $('no-url-banner').classList.add('show');
     return;
   }
 
-  // Hit /api/auth/check with stored token; if 200 we're good, if 401 need login
   const r = await api('/api/auth/check');
   if (!r) {
-    // Can't reach server — still show login with error after a moment
-    showLogin('Cannot reach server. Check the URL in ⚙ Settings, then try again.');
+    // PC is off or unreachable — show offline/wake panel
+    showOffline();
     return;
   }
   if (r._status === 401 || r.login_required) {
     showLogin();
     return;
   }
-  // Token valid (or no auth configured)
   showDashboard();
   refreshData();
 }
@@ -560,12 +619,13 @@ async function refreshData() {
   const d = await api('/api/botdata');
   $('refresh-btn').classList.remove('spin');
 
-  if (!d || d.error === 'Unauthorized' || d._status === 401) {
-    // Token expired or revoked
-    if (d?._status === 401) { showLogin('Session expired — please sign in again.'); return; }
-    $('offline-banner').classList.add('show');
-    if (cachedData) render(cachedData);
-    else renderOffline();
+  if (!d) {
+    // PC went offline mid-session — switch to offline/wake panel
+    showOffline();
+    return;
+  }
+  if (d.error === 'Unauthorized' || d._status === 401) {
+    showLogin('Session expired — please sign in again.');
     return;
   }
   $('offline-banner').classList.remove('show');
@@ -793,6 +853,116 @@ function clearEverything() {
   API_URL = ''; TOKEN = '';
   closeModal('settings-modal');
   showLogin();
+}
+
+// ── Offline / boot state ─────────────────────────────────────────────────────
+let _pollTimer   = null;
+let _pollSecs    = 20;
+let _booting     = false;
+
+function showOffline() {
+  $('login-modal').classList.remove('show');
+  $('offline-panel').classList.add('show');
+  $('app-content').style.display = 'none';
+  $('logout-btn').style.display  = 'none';
+
+  // Wake relay button or MAC hint
+  const relayUrl = (window.WAKE_RELAY_URL || '').trim();
+  if (relayUrl) {
+    $('wake-section').style.display = 'block';
+    $('mac-section').style.display  = 'none';
+  } else {
+    $('wake-section').style.display = 'none';
+    $('mac-section').style.display  = 'block';
+    const mac = (window.PC_MAC || '').trim();
+    $('mac-display').textContent = mac || 'Set PC_MAC in config.js';
+  }
+
+  _startPolling();
+}
+
+function _hideOffline() {
+  $('offline-panel').classList.remove('show');
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  _booting = false;
+}
+
+function _startPolling() {
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollSecs = 20;
+  _updateCd();
+  _pollTimer = setInterval(async () => {
+    _pollSecs--;
+    if (_pollSecs <= 0) {
+      _pollSecs = 20;
+      await _checkOnline();
+    }
+    _updateCd();
+  }, 1000);
+}
+
+function _updateCd() {
+  const el = $('poll-cd');
+  if (el) el.textContent = 'Next check in ' + _pollSecs + 's';
+}
+
+async function _checkOnline() {
+  $('poll-spin').style.animationDuration = '.4s';
+  const r = await api('/api/auth/check');
+  $('poll-spin').style.animationDuration = '.8s';
+
+  if (!r) return; // still offline
+
+  // PC is back online
+  _hideOffline();
+  TOKEN = localStorage.getItem('stockbot_token') || '';
+  if (r.login_required) {
+    showLogin();
+  } else {
+    showDashboard();
+    refreshData();
+  }
+}
+
+async function wakePC() {
+  const relayUrl = (window.WAKE_RELAY_URL || '').replace(/\/$/, '');
+  if (!relayUrl) return;
+
+  const btn = $('wake-btn');
+  btn.disabled = true;
+  btn.textContent = '⚡ Sending…';
+  $('wake-msg').textContent = '';
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    const tok = (window.WAKE_TOKEN || '').trim();
+    if (tok) headers['X-Wake-Token'] = tok;
+
+    const resp = await fetch(relayUrl + '/wake', { method: 'POST', headers, body: '{}' });
+    const data = await resp.json().catch(() => ({}));
+
+    if (resp.ok) {
+      // Switch to "booting" UI
+      _booting = true;
+      $('ol-icon').textContent  = '🔄';
+      $('ol-title').textContent = 'PC is booting…';
+      $('ol-sub').textContent   = 'Magic packet sent! Should be ready in ~2–3 minutes.';
+      btn.textContent           = '✓ Sent';
+      $('wake-msg').textContent = '';
+      $('boot-progress').style.display = 'block';
+      requestAnimationFrame(() => { $('boot-bar').style.width = '100%'; });
+      // Speed up polling to every 15s while booting
+      _pollSecs = 15;
+    } else {
+      btn.disabled = false;
+      btn.textContent = '⚡ Wake PC';
+      $('wake-msg').textContent = '✗ ' + (data.error || 'Relay returned error ' + resp.status);
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '⚡ Wake PC';
+    $('wake-msg').textContent = '✗ Cannot reach relay — check WAKE_RELAY_URL';
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
