@@ -1,0 +1,27 @@
+# Stock Bot Tracker — Named Tunnel Configuration Example
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Copy this file to:   tunnel_config.yml
+# Then fill in your tunnel UUID and domain.
+#
+# OR just run:  setup_named_tunnel.bat
+# That wizard creates tunnel_config.yml automatically.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# The "# public_url:" comment below is READ by tunnel_helper.py.
+# It writes this URL to tunnel_url.txt immediately on startup so the
+# dashboard sidebar shows your permanent URL without waiting.
+#
+# public_url: https://dashboard.yourdomain.com
+#
+
+tunnel: stockbot
+credentials-file: C:\Users\YOUR-WINDOWS-USERNAME\.cloudflared\YOUR-TUNNEL-UUID.json
+
+ingress:
+  # Replace hostname with your actual domain / subdomain
+  - hostname: dashboard.yourdomain.com
+    service: http://localhost:5000
+
+  # Catch-all (required — must be last)
+  - service: http_status:404
