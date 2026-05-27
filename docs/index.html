@@ -362,7 +362,10 @@
 
     <button class="btn primary full" id="login-btn" onclick="doLogin()">Sign In</button>
 
-    <button class="link-btn" onclick="openSettings()" style="margin-top:16px;">
+    <p style="font-size:11px;color:var(--mute);text-align:center;margin-top:14px;line-height:1.5;">
+      No password set up? Type anything in Username and click Sign In.
+    </p>
+    <button class="link-btn" onclick="openSettings()" style="margin-top:8px;">
       ⚙ Change server URL
     </button>
   </div>
@@ -428,7 +431,11 @@ function fmt(n) {
 // ── API wrapper ───────────────────────────────────────────────────────────────
 async function api(path, options = {}) {
   if (!API_URL) return null;
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = {
+    'Content-Type': 'application/json',
+    // Bypass ngrok's free-tier browser warning page for fetch requests
+    'ngrok-skip-browser-warning': 'true',
+  };
   if (TOKEN) headers['X-Auth-Token'] = TOKEN;
   try {
     const r = await fetch(API_URL.replace(/\/$/, '') + path,
