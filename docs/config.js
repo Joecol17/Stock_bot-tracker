@@ -15,5 +15,5 @@
 // IMPORTANT — do NOT commit your Trading 212 API key here.
 // ─────────────────────────────────────────────────────────────────────────────
 
-window.STOCKBOT_API_URL = "https://YOUR-TUNNEL-URL.trycloudflare.com";
+window.STOCKBOT_API_URL = "https://defeat-cataract-movable.ngrok-free.dev";
 window.STOCKBOT_TOKEN   = "";   // matches DASHBOARD_SECRET in .env (optional)
