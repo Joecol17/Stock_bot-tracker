@@ -147,11 +147,19 @@ const App = () => {
         <div className="side-foot">
           <div className="bot-status">
             <span className="dot" style={{
-              background:  botStatus === "running" ? "var(--pos)" : botStatus === "paused" ? "var(--warn)" : "var(--text-dim)",
-              boxShadow:   botStatus === "running" ? "0 0 0 3px oklch(74% 0.16 148 / .18)" : botStatus === "paused" ? "0 0 0 3px oklch(78% 0.14 70 / .18)" : "none",
-              animation:   botStatus === "running" ? undefined : "none",
+              background: botStatus === "running"  ? "var(--pos)"      :
+                          botStatus === "paused"   ? "var(--warn)"     :
+                          botStatus === "standby"  ? "var(--info)"     : "var(--text-dim)",
+              boxShadow:  botStatus === "running"  ? "0 0 0 3px oklch(74% 0.16 148 / .18)" :
+                          botStatus === "paused"   ? "0 0 0 3px oklch(78% 0.14 70 / .18)"  :
+                          botStatus === "standby"  ? "0 0 0 3px oklch(72% 0.13 230 / .18)" : "none",
+              animation:  (botStatus === "running" || botStatus === "standby") ? undefined : "none",
             }}/>
-            <span>Bot <b style={{ color: botStatus === "running" ? "var(--pos)" : botStatus === "paused" ? "var(--warn)" : "var(--text-mute)" }}>{botStatus.toUpperCase()}</b></span>
+            <span>Bot <b style={{
+              color: botStatus === "running"  ? "var(--pos)"  :
+                     botStatus === "paused"   ? "var(--warn)" :
+                     botStatus === "standby"  ? "var(--info)" : "var(--text-mute)"
+            }}>{botStatus === "standby" ? "STANDBY" : botStatus.toUpperCase()}</b></span>
           </div>
           {/* Schedule: next run time or out-of-hours notice */}
           {D.schedule_enabled && (
@@ -212,8 +220,12 @@ const App = () => {
           </div>
           <div className="topbar-right">
             <span className="topbar-chip">
-              <span className="dot" style={{ background: botStatus === "running" ? "var(--pos)" : botStatus === "paused" ? "var(--warn)" : "var(--text-dim)" }}/>
-              Bot {botStatus}
+              <span className="dot" style={{
+                background: botStatus === "running" ? "var(--pos)" :
+                            botStatus === "paused"  ? "var(--warn)" :
+                            botStatus === "standby" ? "var(--info)" : "var(--text-dim)"
+              }}/>
+              Bot {botStatus === "standby" ? "standby" : botStatus}
             </span>
             <span className="topbar-chip"><span className="dot dot-blue"/>T212 API</span>
             <span className="topbar-chip"><span className="dot dot-amber"/>Ollama {model}</span>

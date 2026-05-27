@@ -248,15 +248,26 @@ class AutoTradingBot:
         self._write_control({"paused": False, "run_cycle_now": False})
         self._write_state(0, "idle")
 
-    def _write_state(self, step: int, step_name: str, current_symbol: str = "") -> None:
-        """Write bot state to bot_state.json for the dashboard to read."""
+    def _write_state(self, step: int, step_name: str, current_symbol: str = "",
+                     status: str = None) -> None:
+        """Write bot state to bot_state.json for the dashboard to read.
+
+        status — override the auto-derived status. Recognised values:
+          "running"  actively running a cycle
+          "idle"     in-hours, waiting for next scheduled slot
+          "standby"  outside trading hours, sleeping until next window
+          "paused"   user paused via dashboard
+        """
         try:
             started = datetime.fromisoformat(self._started_at)
             uptime  = int((datetime.now() - started).total_seconds())
             in_window = self._is_trading_time()
             next_slot = self._next_slot_dt()
+            if status is None:
+                status = "running" if (self.is_running and step > 0) else \
+                         ("idle"    if self.is_running                ) else "stopped"
             state = {
-                "status":          "running" if self.is_running else ("idle" if step == 0 else "stopped"),
+                "status":          status,
                 "cycle":           self._cycle_count,
                 "step":            step,
                 "step_name":       step_name,
@@ -422,8 +433,12 @@ class AutoTradingBot:
     def _is_paused(self) -> bool:
         return bool(self._read_control().get("paused", False))
 
-    def _interruptible_sleep(self, seconds: int) -> None:
-        """Sleep for up to `seconds` but exit early if run_cycle_now is set."""
+    def _interruptible_sleep(self, seconds: int) -> bool:
+        """Sleep for up to `seconds` but exit early if run_cycle_now is set.
+
+        Returns True  if interrupted by a manual 'Run Cycle' trigger.
+        Returns False if the full timeout elapsed.
+        """
         deadline = time.time() + seconds
         while self.is_running and time.time() < deadline:
             time.sleep(1)
@@ -431,7 +446,8 @@ class AutoTradingBot:
             if ctrl.get("run_cycle_now"):
                 logger.info("Run-cycle-now triggered from dashboard")
                 self._write_control({"run_cycle_now": False})
-                break
+                return True   # <-- interrupted
+        return False           # <-- timed out normally
 
     def analyze_symbol(self, symbol: str, regime: Optional[Dict[str, Any]] = None) -> bool:
         """
@@ -691,24 +707,28 @@ class AutoTradingBot:
             while self.is_running:
                 # ── pause support ──────────────────────────────────────────
                 while self._is_paused() and self.is_running:
-                    self._write_state(0, "idle")
+                    self._write_state(0, "idle", status="paused")
                     time.sleep(2)
                 if not self.is_running:
                     break
 
-                # ── trading-hours gate ─────────────────────────────────────
+                # ── standby / trading-hours gate ───────────────────────────
                 if not self._is_trading_time():
                     next_dt   = self._next_slot_dt()
                     wait_secs = self._secs_until_next_slot()
                     next_str  = next_dt.strftime("%a %d %b %H:%M")
                     logger.info(
-                        f"Outside trading hours — sleeping until {next_str} "
-                        f"({wait_secs // 3600}h {(wait_secs % 3600) // 60}m)"
+                        f"Standby — next scheduled slot {next_str} "
+                        f"({wait_secs // 3600}h {(wait_secs % 3600) // 60}m) | "
+                        f"'Run Cycle' button will trigger immediately"
                     )
-                    self._write_state(0, "idle")
-                    # Sleep in small chunks so pause/stop still works
-                    self._interruptible_sleep(wait_secs)
-                    continue
+                    self._write_state(0, "standby", status="standby")
+                    triggered = self._interruptible_sleep(wait_secs)
+                    if not triggered:
+                        # Normal timeout — loop back to re-check trading hours
+                        continue
+                    # Manual trigger outside hours — bypass schedule and run now
+                    logger.info("Manual Run Cycle — executing outside scheduled hours")
 
                 # ── daily-trade limit ──────────────────────────────────────
                 if self.trade_count >= Config.MAX_DAILY_TRADES:
@@ -717,8 +737,6 @@ class AutoTradingBot:
                         f"Waiting for next session."
                     )
                     self.notifier.daily_limit_reached(Config.MAX_DAILY_TRADES, self.system.is_demo)
-                    # Sleep to next trading day open
-                    tomorrow = self._next_slot_dt()
                     self._interruptible_sleep(self._secs_until_next_slot())
                     self.trade_count = 0  # reset daily counter for new day
                     continue
@@ -736,11 +754,17 @@ class AutoTradingBot:
                     self.notifier.error(str(e), context=f"Cycle {self._cycle_count}")
 
                 # ── wait until next scheduled slot ─────────────────────────
-                wait_secs = self._secs_until_next_slot()
-                next_time = self._next_slot_dt().strftime("%H:%M")
-                logger.info(f"Next cycle at {next_time} ({wait_secs}s)  |  Trades today: {self.trade_count}")
-                self._write_state(0, "idle")
-                self._interruptible_sleep(wait_secs)
+                # If we're still in trading hours, wait for the next 20-min slot.
+                # If we ran a manual cycle outside hours, loop back to standby.
+                if self._is_trading_time():
+                    wait_secs = self._secs_until_next_slot()
+                    next_time = self._next_slot_dt().strftime("%H:%M")
+                    logger.info(f"Next cycle at {next_time} ({wait_secs}s)  |  Trades today: {self.trade_count}")
+                    self._write_state(0, "idle", status="idle")
+                    self._interruptible_sleep(wait_secs)
+                else:
+                    logger.info("Manual cycle complete — returning to standby")
+                    # loop continues → standby gate will sleep until next window
 
         except KeyboardInterrupt:
             logger.info("Bot stopped by user (Ctrl+C)")
