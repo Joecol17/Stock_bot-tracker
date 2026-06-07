@@ -402,8 +402,8 @@ class AutoTradingBot:
         Return the next datetime we should run a cycle.
 
         During trading hours   → next N-minute boundary within today's window.
-        After end of day       → 9am next trading day.
-        Weekend                → 9am Monday.
+        After end of day       → 12pm (midday) next trading day.
+        Weekend                → 12pm (midday) Monday.
         """
         if not Config.TRADING_SCHEDULE_ENABLED:
             return datetime.now() + timedelta(seconds=Config.BOT_CYCLE_INTERVAL)

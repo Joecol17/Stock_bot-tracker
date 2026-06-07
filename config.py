@@ -49,7 +49,7 @@ class Config:
     # Mon–Fri, TRADING_START_HOUR to TRADING_END_HOUR (local time, 24-h clock)
     # TRADING_CYCLES_PER_HOUR cycles per hour (e.g. 3 = every 20 min)
     TRADING_SCHEDULE_ENABLED: bool = os.getenv("TRADING_SCHEDULE_ENABLED", "true").lower() == "true"
-    TRADING_START_HOUR:  int = int(os.getenv("TRADING_START_HOUR",  "9"))
+    TRADING_START_HOUR:  int = int(os.getenv("TRADING_START_HOUR",  "12"))
     TRADING_END_HOUR:    int = int(os.getenv("TRADING_END_HOUR",   "22"))
     TRADING_CYCLES_PER_HOUR: int = int(os.getenv("TRADING_CYCLES_PER_HOUR", "3"))
 
