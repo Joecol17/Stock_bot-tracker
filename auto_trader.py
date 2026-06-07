@@ -264,8 +264,12 @@ class AutoTradingBot:
             in_window = self._is_trading_time()
             next_slot = self._next_slot_dt()
             if status is None:
-                status = "running" if (self.is_running and step > 0) else \
-                         ("idle"    if self.is_running                ) else "stopped"
+                if self.is_running and step > 0:
+                    status = "running"
+                elif self.is_running:
+                    status = "idle" if in_window else "standby"
+                else:
+                    status = "stopped"
             state = {
                 "status":          status,
                 "cycle":           self._cycle_count,
