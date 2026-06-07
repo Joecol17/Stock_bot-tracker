@@ -203,7 +203,9 @@ def api_status():
             "cash":            account.get("cash", 0),
             "portfolio_value": account.get("portfolio_value", 0),
             "free_funds":      account.get("free_funds", 0),
-            "total_value":     account.get("cash", 0) + account.get("portfolio_value", 0),
+            # portfolio_value maps to Trading 212's "total" = full account equity
+            # (free cash + holdings), so it IS the total — don't add cash again.
+            "total_value":     account.get("portfolio_value", 0),
             "positions":       positions,
             "positions_count": len(positions),
             "timestamp":       datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -579,8 +581,10 @@ def api_botdata():
                     "take_profit": t.get("take_profit"),
                 })
 
+            # portfolio_value is Trading 212's "total" = full account equity already,
+            # so use it directly as the total (adding cash would double-count it).
             total_portfolio = account.get("portfolio_value", 0) or 0
-            result["total_value"] = round(float(result["cash"]) + float(total_portfolio), 2)
+            result["total_value"] = round(float(total_portfolio), 2)
         except Exception:
             pass
 
