@@ -35,6 +35,9 @@ window.BotData = {
   tunnel_url: null,      // set by tunnel_helper.py (Cloudflare public URL)
   paused: false,
   regime: { regime: "unknown" },
+  in_focus_period: false,         // true during the 2:30–3:45pm overdrive window
+  focus_window: "",
+  projections: { ready: false, days_tracked: 0 },  // profit forecast (equity_tracker.py)
 };
 
 async function _fetchBotData() {

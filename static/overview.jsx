@@ -125,6 +125,12 @@ const OverviewPage = ({ tweaks }) => {
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: regimeColor, display: "inline-block" }}/>
           {regimeLabel.toUpperCase()}
         </span>
+        {D.in_focus_period && (
+          <span className="chip overdrive"
+                title={`Focus period ${D.focus_window || ""} — faster scans, more symbols, larger sizing`}>
+            ⚡ OVERDRIVE
+          </span>
+        )}
         {regime.benchmark && (
           <span className="dim">{regime.benchmark} · ${(regime.price||0).toFixed(2)}</span>
         )}
@@ -299,6 +305,9 @@ const OverviewPage = ({ tweaks }) => {
         </div>
       </div>
 
+      {/* Profit projections */}
+      <ProjectionsCard />
+
       {/* Risk + activity */}
       <div className="row row-2">
         <div className="card">
@@ -400,6 +409,59 @@ const OverviewPage = ({ tweaks }) => {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const ProjectionsCard = () => {
+  const D = window.BotData;
+  const p = D.projections || {};
+  const sfmt = (n) => (n >= 0 ? "+" : "−") + "$" +
+    Math.abs(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tone = (n) => (n >= 0 ? "var(--pos)" : "var(--neg)");
+  const confChip = p.confidence === "high" ? "pos" : p.confidence === "medium" ? "warn" : "neg";
+
+  const cells = [
+    ["Per day",   p.proj_day],
+    ["Per month", p.proj_month],
+    ["Per year",  p.proj_year],
+  ];
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>Profit projections</h3>
+        {p.ready
+          ? <span className={`chip ${confChip}`}>{p.confidence} confidence</span>
+          : <span className="chip">building</span>}
+        <span className="meta">{p.ready ? `${p.days_tracked} days tracked` : "needs 2+ days of data"}</span>
+      </div>
+      <div className="card-body">
+        {!p.ready ? (
+          <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-dim)", fontFamily: "var(--mono)", fontSize: 12 }}>
+            📊 Building forecast — {p.days_tracked || 0} day{p.days_tracked === 1 ? "" : "s"} of equity recorded.<br/>
+            <span style={{ fontSize: 11, color: "var(--text-mute)" }}>Projections appear after 2+ days of data.</span>
+          </div>
+        ) : (
+          <React.Fragment>
+            <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+              {cells.map(([lbl, val]) => (
+                <div className="kpi" key={lbl}>
+                  <span className="kpi-label">{lbl}</span>
+                  <span className="kpi-value mono" style={{ color: tone(val) }}>{sfmt(val)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="divider" style={{ margin: "14px 0" }}/>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontFamily: "var(--mono)", fontSize: 11, color: "var(--text-mute)" }}>
+              <span>Trend so far: <b style={{ color: tone(p.total_profit) }}>{sfmt(p.total_profit)}</b> ({p.total_profit_pct >= 0 ? "+" : ""}{p.total_profit_pct}%)</span>
+              <span>Avg <b style={{ color: "var(--text)" }}>{p.avg_daily_pct >= 0 ? "+" : ""}{p.avg_daily_pct}%/day</b></span>
+              <span>Proj. 1y value: <b style={{ color: "var(--text)" }}>${(p.proj_year_value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}</b></span>
+              <span style={{ color: "var(--text-dim)" }}>Linear estimate from recorded equity — not a guarantee.</span>
+            </div>
+          </React.Fragment>
+        )}
       </div>
     </div>
   );

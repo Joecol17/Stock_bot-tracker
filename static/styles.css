@@ -148,6 +148,19 @@ input, select { font-family: inherit; color: inherit; }
   50%      { box-shadow: 0 0 0 6px oklch(74% 0.16 148 / .04); }
 }
 
+/* ─── Overdrive (focus-period) indicator ─── */
+@keyframes overdrive {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(78% 0.14 70 / .55); transform: scale(1); }
+  50%      { box-shadow: 0 0 14px 2px oklch(78% 0.14 70 / .75); transform: scale(1.03); }
+}
+.chip.overdrive {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 800; letter-spacing: 0.08em;
+  animation: overdrive 1.3s ease-in-out infinite;
+}
+
 /* ─── Main ─── */
 .main {
   overflow: auto;
