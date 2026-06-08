@@ -154,6 +154,59 @@ Stock_bot-tracker/
 
 ---
 
+## Codebase map — grouped by job
+
+The code splits into clear layers. Top to bottom is roughly **decide → trade → show**.
+
+**🧠 The decision brain (what to do)**
+- `decision_system.py` — talks to local Ollama (`OllamaClient`) and turns a market-context dict into a structured BUY/SELL/HOLD with stop, target, confidence and setup type (`DecisionEngine`). Robustly extracts JSON from the model's reply (handles code fences / pretty-printed / embedded objects).
+- `swing_filters.py` — four pre-trade quality gates that run *before* the LLM: market regime (SPY vs its SMAs), earnings-date avoidance, relative strength vs SPY, and a 0–100 technical setup score. A symbol must clear `MIN_FILTER_SCORE` to be analysed at all.
+
+**🔎 What to look at (data & screening)**
+- `watchlist.py` — `WatchlistManager` (the symbol list, persisted to `watchlist.json`) and `Screener` (cheap 5-day activity scoring to pick the top N symbols each cycle).
+- `discovery.py` — periodically scans a ~150-stock universe and auto-adds the most active fresh names to the watchlist.
+- `get_market_context()` (in `auto_trader.py`) — pulls 1y of daily bars for one symbol and computes RSI / MACD / SMA20-50-200 / ATR / Bollinger plus ATR-based suggested stop & target.
+- `equity_tracker.py` — records one equity snapshot per day and computes the day/month/year profit projections shown on the Predictions page.
+
+**💸 Making & managing trades (execution)**
+- `trading_system.py` — the façade that wires the brain to the broker: `analyze_and_trade()`, `check_risk_exits()`, account status.
+- `order_executor.py` — the workhorse: risk-based **fractional** position sizing (capped by `MAX_POSITION_PCT` and free cash), stop/target placement, market buys/sells, and exit management (hard stop, take-profit, and a trailing stop with a **breakeven floor**). Persists open positions to `tracked_positions.json` and every fill to `trade_history.json`.
+- `trading212_client.py` — the raw Trading 212 REST client: auth, account/cash, positions, orders, ticker resolution (`AAPL` → `AAPL_US_EQ`), and market/limit/stop order placement.
+
+**🔁 The bot itself (orchestration)**
+- `auto_trader.py` — the live loop. Honours the trading schedule + market-open "focus period", and each cycle: checks risk exits → (occasionally) runs discovery → reads the regime → screens the watchlist → analyses each symbol through filters + LLM + executor → records equity → writes state for the dashboard. `config.py` holds every tunable (read from `.env`).
+
+**🔔 Notifications**
+- `notifier.py` — fans out Discord webhooks per channel: trades, risk exits, cycle summaries, discovery, errors, bot start/stop.
+
+**🖥️ Local dashboard (web UI)**
+- `dashboard.py` — Flask app serving the UI and the JSON API (`/api/botdata`, `/api/config`, `/api/trades`, watchlist, bot pause/run-cycle, PC power, logs).
+- `templates/dashboard.html` + `static/live_data.js` — the HTML shell and the live-data bridge (`window.BotData`, polled every 30s).
+- `static/app.jsx` — sidebar / top-bar / router. Pages: `overview.jsx`, `sources.jsx`, `trades.jsx`, `ai-engine.jsx`, `broker.jsx`, `risk-config.jsx`, `predictions.jsx`, `logs.jsx`, `watchlist.jsx`. Shared: `viz.jsx` (charts), `icons.jsx`, `tweaks-panel.jsx`, `styles.css`.
+
+**🌍 Remote access (from your phone)**
+- `docs/index.html` + `docs/config.js` — GitHub Pages gateway: signs in, wakes the PC if it's asleep, then forwards to the full dashboard over the tunnel.
+- `tunnel_helper.py` — opens the public tunnel (Cloudflare / ngrok) and writes `tunnel_url.txt`.
+- `wol_relay/` — a tiny Flask service hosted on Render that sends the Wake-on-LAN magic packet to the PC.
+- `headless_launcher.py` — boots the whole stack silently (tunnel + dashboard + bot) for Windows Task Scheduler; `*.bat` / `boot_notify.ps1` are setup/launch helpers.
+
+**🧪 Offline testing & manual use**
+- `backtest.py` — replays historical daily data through the same decision logic (AI or fast rule mode) without touching the broker.
+- `interactive.py` — a manual CLI to analyse a stock, view the account, or run a backtest. `main.py` is a one-shot demo of the decide→execute path.
+
+### How one cycle flows
+```
+schedule / focus gate → check_risk_exits  (sell anything that hit SL / TP / trailing stop)
+  → (every N cycles) discovery → market regime → screen watchlist to top-N
+  → for each symbol:  market context → swing filters → [pass?] → Ollama decision
+       → risk-sized order via Trading 212 → register stop/target tracking
+  → record equity snapshot → Discord cycle summary → sleep to next slot
+```
+The dashboard reads everything from JSON the bot writes (`bot_state.json`, `trade_history.json`,
+`tracked_positions.json`, `symbol_queue.json`, `equity_history.json`) plus live Trading 212 / Ollama calls.
+
+---
+
 ## .env Configuration Reference
 
 ```env
