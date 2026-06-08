@@ -1,11 +1,40 @@
 import json
 import os
 import time
+import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from trading212_client import Trading212Client, OrderSide, OrderType
 from config import Config
+
+logger = logging.getLogger(__name__)
+
+
+def _us_market_open() -> bool:
+    """Return True if US equity markets are currently open (Mon–Fri 9:30–16:00 ET).
+
+    Uses zoneinfo (Python 3.9+ stdlib, Windows needs 'tzdata' pip package).
+    Falls back to a UTC-based manual calculation if zoneinfo is unavailable.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+        et = datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        # Fallback: derive Eastern Time from UTC without third-party libs
+        from datetime import timedelta as _td
+        utc = datetime.utcnow()
+        y = utc.year
+        mar1 = datetime(y, 3, 1)
+        dst_start = mar1 + _td(days=(6 - mar1.weekday()) % 7 + 7)   # 2nd Sunday of March
+        nov1 = datetime(y, 11, 1)
+        dst_end   = nov1 + _td(days=(6 - nov1.weekday()) % 7)        # 1st Sunday of November
+        h = -4 if dst_start.date() <= utc.date() < dst_end.date() else -5
+        et = utc + _td(hours=h)
+    if et.weekday() >= 5:          # Saturday / Sunday
+        return False
+    mins = et.hour * 60 + et.minute
+    return 9 * 60 + 30 <= mins < 16 * 60   # 09:30–16:00 ET
 
 HISTORY_FILE = "trade_history.json"
 
@@ -202,17 +231,20 @@ class OrderExecutor:
         except Exception:
             return []
 
+        # T212 returns instrument_code as "NFLX_US_EQ" — build both a T212-key and
+        # a short-name-key map so we can look up whichever the caller stored.
         current_prices = {p.instrument_code: p.current_price for p in positions}
         results: List[ExecutionResult] = []
 
         today = datetime.utcnow().date()
 
         for symbol, tracking in list(self._tracked_positions.items()):
-            if symbol not in current_prices:
+            t212_ticker = self.client._resolve_ticker(symbol)
+            if t212_ticker not in current_prices:
                 del self._tracked_positions[symbol]
                 continue
 
-            price = current_prices[symbol]
+            price = current_prices[t212_ticker]
             hit   = None
 
             if price <= tracking["stop_loss"]:
@@ -238,6 +270,14 @@ class OrderExecutor:
 
             if hit:
                 result = self._execute_sell(symbol, tracking["quantity"])
+                # If the sell was blocked because markets are closed, keep tracking
+                # so we retry on the next cycle when markets open.
+                if getattr(result, "error", None) == "market_closed":
+                    logger.info(
+                        f"  {symbol}: {hit} triggered but market closed — "
+                        "will retry next cycle"
+                    )
+                    continue
                 result.action = hit
                 entry = tracking["entry_price"]
                 pct   = round((price - entry) / entry * 100, 2)
@@ -300,6 +340,15 @@ class OrderExecutor:
         target_price: Optional[float] = None,
     ) -> ExecutionResult:
         try:
+            # T212 market-order endpoint returns 404 outside US market hours.
+            if not _us_market_open():
+                logger.info(f"  {symbol}: market closed — BUY queued until next market open")
+                return ExecutionResult(
+                    success=False, symbol=symbol, action="BUY", quantity=quantity,
+                    message="Market closed — order not placed (US market hours: 9:30–16:00 ET)",
+                    error="market_closed",
+                )
+
             account = self.client.get_account_info()
             if account.free_funds <= 0:
                 return ExecutionResult(
@@ -340,7 +389,9 @@ class OrderExecutor:
         time.sleep(1)
         try:
             positions = self.client.get_positions()
-            pos = next((p for p in positions if p.instrument_code == symbol), None)
+            # T212 returns instrument_code as "NFLX_US_EQ" not "NFLX" — resolve first.
+            t212_ticker = self.client._resolve_ticker(symbol)
+            pos = next((p for p in positions if p.instrument_code == t212_ticker), None)
             entry = float(pos.average_price) if pos else None
         except Exception:
             entry = None
@@ -361,8 +412,19 @@ class OrderExecutor:
 
     def _execute_sell(self, symbol: str, quantity: float) -> ExecutionResult:
         try:
+            # T212 market-order endpoint returns 404 outside US market hours.
+            if not _us_market_open():
+                logger.info(f"  {symbol}: market closed — SELL will retry next cycle")
+                return ExecutionResult(
+                    success=False, symbol=symbol, action="SELL", quantity=quantity,
+                    message="Market closed — order not placed (US market hours: 9:30–16:00 ET)",
+                    error="market_closed",
+                )
+
             positions = self.client.get_positions()
-            position = next((p for p in positions if p.instrument_code == symbol), None)
+            # T212 returns instrument_code as "NFLX_US_EQ" not "NFLX" — resolve first.
+            t212_ticker = self.client._resolve_ticker(symbol)
+            position = next((p for p in positions if p.instrument_code == t212_ticker), None)
 
             available = position.quantity if position else 0
             if not position or available < quantity:
@@ -407,6 +469,8 @@ class OrderExecutor:
     def _save_history(self, result: ExecutionResult) -> None:
         if result.action == "HOLD":
             return  # Don't clutter the log with holds
+        if getattr(result, "error", None) == "market_closed":
+            return  # Market-closed blocks are expected — don't fill history with them
 
         record = {
             # Core
