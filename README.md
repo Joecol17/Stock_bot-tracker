@@ -158,6 +158,14 @@ Stock_bot-tracker/
 
 The code splits into clear layers. Top to bottom is roughly **decide → trade → show**.
 
+**⚙️ Configuration & entry points**
+- `config.py` — every tunable in one place (risk, stops, filters, schedule, focus period, Ollama, broker), each read from `.env` with a sane default.
+- `.env` — your private keys + settings (git-ignored); `.env.example` is the documented template to copy from.
+- `requirements.txt` — Python dependencies.
+- `auto_trader.py` — **the bot**: the continuous loop that drives everything below (detailed under *orchestration*).
+- `interactive.py` — a manual CLI menu (analyse a stock, view the account, run a backtest) for hands-on use.
+- `main.py` — a one-shot demo of the decide→execute path against a hard-coded sample context.
+
 **🧠 The decision brain (what to do)**
 - `decision_system.py` — talks to local Ollama (`OllamaClient`) and turns a market-context dict into a structured BUY/SELL/HOLD with stop, target, confidence and setup type (`DecisionEngine`). Robustly extracts JSON from the model's reply (handles code fences / pretty-printed / embedded objects).
 - `swing_filters.py` — four pre-trade quality gates that run *before* the LLM: market regime (SPY vs its SMAs), earnings-date avoidance, relative strength vs SPY, and a 0–100 technical setup score. A symbol must clear `MIN_FILTER_SCORE` to be analysed at all.
@@ -182,13 +190,25 @@ The code splits into clear layers. Top to bottom is roughly **decide → trade �
 **🖥️ Local dashboard (web UI)**
 - `dashboard.py` — Flask app serving the UI and the JSON API (`/api/botdata`, `/api/config`, `/api/trades`, watchlist, bot pause/run-cycle, PC power, logs).
 - `templates/dashboard.html` + `static/live_data.js` — the HTML shell and the live-data bridge (`window.BotData`, polled every 30s).
-- `static/app.jsx` — sidebar / top-bar / router. Pages: `overview.jsx`, `sources.jsx`, `trades.jsx`, `ai-engine.jsx`, `broker.jsx`, `risk-config.jsx`, `predictions.jsx`, `logs.jsx`, `watchlist.jsx`. Shared: `viz.jsx` (charts), `icons.jsx`, `tweaks-panel.jsx`, `styles.css`.
+- `static/app.jsx` — the app shell: sidebar, top bar, page router, pause / run-cycle buttons, and remote PC-power controls.
+- Pages (sidebar shortcut key in brackets):
+  - `overview.jsx` **[1]** — KPIs, the live decision pipeline, equity chart, market regime, and risk / swing stats.
+  - `sources.jsx` **[2]** — a world-map view of the data sources (broker / market / AI) with live latency.
+  - `trades.jsx` **[3]** — open positions table and the recent BUY/SELL/HOLD decision feed.
+  - `ai-engine.jsx` **[4]** — Ollama model picker, temperature, max-tokens, and a prompt preview.
+  - `broker.jsx` **[5]** — Trading 212 API key (masked), demo/live toggle, account stats, and a "test connection" button.
+  - `risk-config.jsx` **[6]** — position sizing, ATR/% stops, pre-trade filters, and screener/discovery settings (writes `.env`).
+  - `predictions.jsx` **[7]** — day/month/year profit forecast, equity history chart, confidence, and 1-year outlook.
+  - `logs.jsx` **[8]** — a live tail of `trading_bot.log`.
+  - `watchlist.jsx` **[9]** — watchlist symbols, each one's per-cycle status, and on-demand AI analysis.
+- Shared UI: `viz.jsx` (chart primitives — Sparkline / AreaChart / StackedBars / Donut), `icons.jsx` (SVG icons), `tweaks-panel.jsx` (accent/density drawer), `styles.css` (the design system).
 
 **🌍 Remote access (from your phone)**
 - `docs/index.html` + `docs/config.js` — GitHub Pages gateway: signs in, wakes the PC if it's asleep, then forwards to the full dashboard over the tunnel.
 - `tunnel_helper.py` — opens the public tunnel (Cloudflare / ngrok) and writes `tunnel_url.txt`.
 - `wol_relay/` — a tiny Flask service hosted on Render that sends the Wake-on-LAN magic packet to the PC.
-- `headless_launcher.py` — boots the whole stack silently (tunnel + dashboard + bot) for Windows Task Scheduler; `*.bat` / `boot_notify.ps1` are setup/launch helpers.
+- `headless_launcher.py` — boots the whole stack silently (tunnel + dashboard + bot) for Windows Task Scheduler.
+- `start_bot.bat` — interactive one-click launcher · `setup_remote.bat` / `setup_ngrok.bat` / `setup_named_tunnel.bat` — one-time remote-access setup · `boot_notify.ps1` — sends a "PC is up" notice on boot · `tunnel_config.yml.example` — template for a permanent Cloudflare named tunnel.
 
 **🧪 Offline testing & manual use**
 - `backtest.py` — replays historical daily data through the same decision logic (AI or fast rule mode) without touching the broker.
@@ -204,6 +224,17 @@ schedule / focus gate → check_risk_exits  (sell anything that hit SL / TP / tr
 ```
 The dashboard reads everything from JSON the bot writes (`bot_state.json`, `trade_history.json`,
 `tracked_positions.json`, `symbol_queue.json`, `equity_history.json`) plus live Trading 212 / Ollama calls.
+
+### 🗂️ Runtime state files (created as the bot runs — git-ignored)
+- `watchlist.json` — your tracked symbols · `universe.json` — cached discovery universe
+- `trade_history.json` — every fill and exit · `tracked_positions.json` — open positions + their stop / target / trailing state
+- `bot_state.json` — current pipeline step & status (the dashboard reads it) · `bot_control.json` — pause / run-cycle flags (dashboard writes, bot reads)
+- `symbol_queue.json` — per-symbol status for the current cycle · `symbol_prefs.json` — per-symbol enable/disable from the dashboard
+- `equity_history.json` — one equity row per day (powers Predictions) · `tunnel_url.txt` — the current public URL
+- `trading_bot.log` / `launcher.log` — run logs
+
+### 📄 Docs
+`README.md` (this file) · `QUICK_START.md` · `SETUP.md` · `REMOTE_SETUP.md` · `setup_guide.html` (a styled in-browser setup walkthrough).
 
 ---
 
