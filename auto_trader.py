@@ -13,6 +13,7 @@ from watchlist import WatchlistManager, Screener
 from discovery import StockDiscovery
 from notifier import DiscordNotifier
 from swing_filters import run_all_filters, get_market_regime
+from equity_tracker import record_snapshot
 from config import Config
 
 
@@ -678,6 +679,11 @@ class AutoTradingBot:
             cash = account.get('cash', 0)
             portfolio = account.get('portfolio_value', 0)
             logger.info(f"Cash: ${cash:.2f}  |  Portfolio: ${portfolio:.2f}")
+            # Record today's equity snapshot for the profit-projection engine.
+            try:
+                record_snapshot(portfolio, cash)
+            except Exception:
+                pass
             self.notifier.cycle_summary(
                 cycle=self._cycle_count,
                 trades_this_cycle=trades_this_cycle,

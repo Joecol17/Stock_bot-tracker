@@ -17,6 +17,7 @@ from flask_cors import CORS
 from config import Config
 from watchlist import WatchlistManager
 from swing_filters import get_market_regime
+from equity_tracker import compute_projections
 
 # ---------------------------------------------------------------------------
 # Bot control file (pause / run-cycle-now flags read by auto_trader.py)
@@ -479,6 +480,10 @@ def api_botdata():
         "next_run":          "",
         "trading_hours":     f"{Config.TRADING_START_HOUR:02d}:00–{Config.TRADING_END_HOUR:02d}:00 Mon–Fri",
         "cycles_per_hour":   Config.TRADING_CYCLES_PER_HOUR,
+        # Focus period (market-open overdrive)
+        "in_focus_period":   Config.in_focus_period(),
+        "focus_window":      (f"{Config.FOCUS_START_HOUR:02d}:{Config.FOCUS_START_MIN:02d}–"
+                              f"{Config.FOCUS_END_HOUR:02d}:{Config.FOCUS_END_MIN:02d}"),
         # Swing-trading config surfaced to the dashboard
         "risk_per_trade_pct":  Config.RISK_PER_TRADE_PCT,
         "atr_stop_multiplier": Config.ATR_STOP_MULTIPLIER,
@@ -693,6 +698,12 @@ def api_botdata():
     else:
         result["equity"] = [{"i": i, "v": round(base, 2)} for i in range(72)]
 
+    # Profit projections (day / month / year) from the recorded equity history
+    try:
+        result["projections"] = compute_projections()
+    except Exception as e:
+        result["projections"] = {"ready": False, "days_tracked": 0, "message": str(e)}
+
     return jsonify(result)
 
 
@@ -709,6 +720,19 @@ def api_orders():
         return jsonify(system.get_open_orders())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# API — profit projections (day / month / year)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/predictions")
+def api_predictions():
+    """Day / month / year profit projections from the recorded equity history."""
+    try:
+        return jsonify(compute_projections())
+    except Exception as e:
+        return jsonify({"ready": False, "days_tracked": 0, "message": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

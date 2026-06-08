@@ -98,6 +98,31 @@
     .chip.bear    { color:var(--neg);  border-color:rgba(248,113,113,.3); background:rgba(248,113,113,.07); }
     .chip.neutral { color:var(--warn); border-color:rgba(251,191,36,.3);  background:rgba(251,191,36,.07); }
 
+    /* ── Overdrive (focus period) chip ─────────────────────────────────────── */
+    .chip.focus {
+      color:var(--accent); border-color:rgba(212,161,106,.55);
+      background:rgba(212,161,106,.14); font-weight:800;
+      animation: overdrive 1.3s ease-in-out infinite;
+    }
+    @keyframes overdrive {
+      0%,100% { box-shadow:0 0 0 rgba(212,161,106,0);   transform:scale(1); }
+      50%     { box-shadow:0 0 12px rgba(212,161,106,.7); transform:scale(1.04); }
+    }
+
+    /* ── Profit projections ────────────────────────────────────────────────── */
+    .proj-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+    .proj-cell { text-align:center; padding:4px 2px; border-radius:8px; background:var(--surface2); }
+    .proj-val  { font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+    .proj-lbl  { font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; margin-top:2px; }
+    .proj-note { font-size:10px; color:var(--mute); line-height:1.5; margin-top:10px; text-align:center; }
+    .conf-badge {
+      display:inline-block; font-size:9px; padding:1px 7px; border-radius:20px;
+      border:1px solid var(--border); text-transform:uppercase; letter-spacing:.06em;
+    }
+    .conf-badge.low    { color:var(--neg);  border-color:rgba(248,113,113,.3); }
+    .conf-badge.medium { color:var(--warn); border-color:rgba(251,191,36,.3); }
+    .conf-badge.high   { color:var(--pos);  border-color:rgba(74,222,128,.3); }
+
     .dot {
       width: 7px; height: 7px; border-radius: 50%;
       display: inline-block; flex-shrink: 0;
@@ -310,6 +335,7 @@
   <!-- Status chips -->
   <div class="status-bar">
     <span class="chip idle" id="chip-status"><span class="dot gray"></span> CONNECTING</span>
+    <span class="chip focus" id="chip-focus" style="display:none;">⚡ OVERDRIVE</span>
     <span class="chip demo" id="chip-mode">DEMO</span>
     <span class="chip neutral" id="chip-regime">📊 REGIME</span>
     <div class="regime-detail" id="regime-detail" style="display:none;"></div>
@@ -359,6 +385,15 @@
       <span style="font-size:10px;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0;">last 5</span>
     </div>
     <div id="decisions-body"><div class="card-empty">Connecting…</div></div>
+  </div>
+
+  <!-- Profit projections -->
+  <div class="card">
+    <div class="card-head">
+      Profit Projections
+      <span class="card-head-right" id="proj-basis"></span>
+    </div>
+    <div class="card-body" id="proj-body"><div class="card-empty">Connecting…</div></div>
   </div>
 
   <div class="footer" id="footer">Never refreshed</div>
@@ -649,6 +684,7 @@ function render(d) {
   renderPortfolio(d);
   renderPositions(d);
   renderDecisions(d);
+  renderProjections(d);
 }
 
 function renderStatus(d) {
@@ -657,6 +693,12 @@ function renderStatus(d) {
   chipEl.className = 'chip ' + (status === 'running' ? 'running' : status === 'paused' ? 'paused' : 'idle');
   const dotC = status === 'running' ? 'green pulse' : status === 'paused' ? 'amber' : 'gray';
   chipEl.innerHTML = `<span class="dot ${dotC}"></span> ${status.toUpperCase()}`;
+
+  // Overdrive (focus-period) chip — only visible while the market-open burst is active
+  $('chip-focus').style.display = d.in_focus_period ? '' : 'none';
+  if (d.in_focus_period && d.focus_window) {
+    $('chip-focus').title = 'Focus period ' + d.focus_window + ' — faster scans, more symbols, larger sizing';
+  }
 
   const mode = d.mode || 'DEMO';
   const modeEl = $('chip-mode');
@@ -761,6 +803,55 @@ function renderDecisions(d) {
         </div>
       </div>`;
   }).join('');
+}
+
+function renderProjections(d) {
+  const p = d.projections || {};
+  const basisEl = $('proj-basis');
+  const body    = $('proj-body');
+
+  // Not enough history yet → friendly "collecting data" state
+  if (!p.ready) {
+    basisEl.textContent = '';
+    const days = p.days_tracked || 0;
+    body.innerHTML = `
+      <div class="card-empty">
+        📊 Building forecast…<br>
+        <span style="font-size:10px;color:var(--mute);">
+          ${days} day${days === 1 ? '' : 's'} of equity recorded — projections appear after 2+ days of data.
+        </span>
+      </div>`;
+    return;
+  }
+
+  // Signed currency formatter (fmt() shows absolute value only)
+  const sfmt = n => (n >= 0 ? '+' : '−') + fmt(Math.abs(n));
+  const cls  = n => (n >= 0 ? 'pos-text' : 'neg-text');
+
+  basisEl.innerHTML =
+    `<span class="conf-badge ${p.confidence}">${p.confidence}</span> ${p.days_tracked}d`;
+
+  const cell = (val, lbl) =>
+    `<div class="proj-cell">
+       <div class="proj-val ${cls(val)}">${sfmt(val)}</div>
+       <div class="proj-lbl">${lbl}</div>
+     </div>`;
+
+  const yearPct = p.avg_daily_pct != null ? (p.avg_daily_pct * 252).toFixed(0) : '—';
+
+  body.innerHTML = `
+    <div class="proj-grid">
+      ${cell(p.proj_day,   'Per day')}
+      ${cell(p.proj_month, 'Per month')}
+      ${cell(p.proj_year,  'Per year')}
+    </div>
+    <div class="proj-note">
+      Trend so far: <b class="${cls(p.total_profit)}">${sfmt(p.total_profit)}</b>
+      (${p.total_profit_pct >= 0 ? '+' : ''}${p.total_profit_pct}%) over ${p.days_tracked} days
+      · avg ${p.avg_daily_pct >= 0 ? '+' : ''}${p.avg_daily_pct}%/day<br>
+      Projected value in 1 year: <b>${fmt(p.proj_year_value)}</b> (~${yearPct}%/yr)<br>
+      <span style="color:var(--mute);">Linear estimate from recorded equity — not a guarantee.</span>
+    </div>`;
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
