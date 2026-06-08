@@ -77,10 +77,23 @@ def install_deps():
     req = os.path.join(BASE_DIR, "requirements.txt")
     if not os.path.exists(req):
         return
-    logger.info("Installing / verifying Python dependencies…")
+    # Skip the slow, network-bound pip step if everything is already importable.
+    import importlib.util
+    def _have(m):
+        try:
+            return importlib.util.find_spec(m) is not None
+        except Exception:
+            return False
+    missing = [m for m in ("flask", "flask_cors", "requests", "yfinance", "ta", "dotenv") if not _have(m)]
+    if not missing:
+        logger.info("Dependencies already present — skipping pip.")
+        return
+    logger.info(f"Installing missing dependencies: {missing}")
     subprocess.run(
         [PYTHON, "-m", "pip", "install", "-r", req, "--quiet"],
         check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         creationflags=NO_WINDOW,
     )
 
@@ -174,8 +187,17 @@ def main():
     # 2. Ollama
     ensure_ollama()
 
-    # 3. Cloudflare tunnel (background — non-blocking)
-    if not NO_TUNNEL and os.path.exists(CF_EXE):
+    # 3. Public tunnel (background, non-blocking) — feeds the GitHub Pages dashboard.
+    #    tunnel_helper.py picks the right tool: cloudflared named tunnel, ngrok
+    #    static domain, or a cloudflared quick tunnel.
+    ngrok_exe    = os.path.join(BASE_DIR, "ngrok.exe")
+    tunnel_yml   = os.path.join(BASE_DIR, "tunnel_config.yml")
+    have_tunnel  = (
+        os.path.exists(CF_EXE)
+        or os.path.exists(tunnel_yml)
+        or (os.path.exists(ngrok_exe) and os.getenv("NGROK_STATIC_DOMAIN", "").strip())
+    )
+    if not NO_TUNNEL and have_tunnel:
         p_tunnel = subprocess.Popen(
             [PYTHON, script("tunnel_helper.py")],
             cwd=BASE_DIR,
@@ -185,8 +207,8 @@ def main():
         time.sleep(8)   # let tunnel establish before dashboard starts
     else:
         if not NO_TUNNEL:
-            logger.info("cloudflared.exe not found — remote tunnel disabled")
-            logger.info("Run setup_remote.bat to enable remote dashboard access")
+            logger.info("No tunnel tool found (cloudflared/ngrok) — remote dashboard disabled")
+            logger.info("Run setup_ngrok.bat (free) or setup_remote.bat to enable remote access")
 
     # 4. Dashboard
     p_dash = start_bg("Dashboard", PYTHON, script("dashboard.py"), delay=0)

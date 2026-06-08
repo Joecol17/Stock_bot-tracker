@@ -33,6 +33,7 @@ CF_EXE      = os.path.join(BASE_DIR, "cloudflared.exe")
 NGROK_EXE   = os.path.join(BASE_DIR, "ngrok.exe")
 URL_FILE    = os.path.join(BASE_DIR, "tunnel_url.txt")
 CONFIG_FILE = os.path.join(BASE_DIR, "tunnel_config.yml")
+NO_WINDOW   = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0  # no black console
 
 
 def clear_url() -> None:
@@ -82,6 +83,7 @@ def _run_named_tunnel() -> None:
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, encoding="utf-8", errors="replace",
+        creationflags=NO_WINDOW,
     )
     try:
         for line in proc.stdout:
@@ -111,6 +113,7 @@ def _run_ngrok(local_port: int, static_domain: str) -> None:
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, encoding="utf-8", errors="replace",
+        creationflags=NO_WINDOW,
     )
     try:
         for line in proc.stdout:
@@ -135,6 +138,7 @@ def _run_quick_tunnel(local_port: int) -> None:
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, encoding="utf-8", errors="replace",
+        creationflags=NO_WINDOW,
     )
     url_found = False
     try:
