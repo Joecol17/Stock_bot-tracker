@@ -21,6 +21,7 @@ bot_state.json
 bot_control.json
 symbol_queue.json
 symbol_prefs.json
+tracked_positions.json
 tunnel_url.txt
 launcher.log
 cloudflared.exe

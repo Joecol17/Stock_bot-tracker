@@ -408,7 +408,10 @@ class AutoTradingBot:
         if not Config.TRADING_SCHEDULE_ENABLED:
             return datetime.now() + timedelta(seconds=Config.BOT_CYCLE_INTERVAL)
 
-        slot_mins = 60 // Config.TRADING_CYCLES_PER_HOUR   # e.g. 20 min
+        # During the market-open focus window, scan far more often (e.g. every 5 min).
+        cycles_per_hour = (Config.FOCUS_CYCLES_PER_HOUR
+                           if Config.in_focus_period() else Config.TRADING_CYCLES_PER_HOUR)
+        slot_mins = max(1, 60 // max(1, cycles_per_hour))   # e.g. 20 min normal, 5 min focus
         start_h   = Config.TRADING_START_HOUR
         end_h     = Config.TRADING_END_HOUR
         now       = datetime.now()
@@ -472,6 +475,14 @@ class AutoTradingBot:
             if not self._is_symbol_enabled(symbol):
                 logger.info(f"  {symbol}: disabled by user — skipping")
                 self._set_sym_status(symbol, "disabled")
+                return False
+
+            # Already holding it? Don't let the LLM churn it every cycle — the
+            # stop-loss / trailing-stop / take-profit manage the exit so the
+            # position can run to its maximum result.
+            if Config.HOLD_THROUGH_LLM and symbol in self.system.get_tracked_positions():
+                logger.info(f"  {symbol}: holding — managed by trailing stop, skipping LLM")
+                self._set_sym_status(symbol, "hold", "holding — trailing stop active")
                 return False
 
             self._set_sym_status(symbol, "filtering")
@@ -637,9 +648,13 @@ class AutoTradingBot:
         self._write_state(2, "Screener")
         tracked = list(self.system.get_tracked_positions().keys())
         all_symbols = self.watchlist.list_symbols()
+        focus = Config.in_focus_period()
+        if focus:
+            logger.info("🔥 FOCUS PERIOD — overdrive: faster scans, more symbols, larger sizing")
+        max_syms = Config.FOCUS_SYMBOLS_PER_CYCLE if focus else Config.MAX_SYMBOLS_PER_CYCLE
         symbols = self.screener.top_symbols(
             all_symbols,
-            n=Config.MAX_SYMBOLS_PER_CYCLE,
+            n=max_syms,
             always_include=tracked,
         )
         logger.info(f"Symbols this cycle: {', '.join(symbols)}")
@@ -691,6 +706,13 @@ class AutoTradingBot:
 
         logger.info("Starting Trading Bot")
         logger.info(f"Mode: {'DEMO' if self.system.is_demo else 'LIVE'}")
+
+        # Re-adopt any positions still open at the broker from a previous run so
+        # their stop-loss / trailing-stop keep being managed after a restart.
+        try:
+            self.system.executor.sync_with_broker()
+        except Exception as e:
+            logger.warning(f"Position re-sync failed: {e}")
         if Config.TRADING_SCHEDULE_ENABLED:
             slot = 60 // Config.TRADING_CYCLES_PER_HOUR
             logger.info(
@@ -734,8 +756,8 @@ class AutoTradingBot:
                     # Manual trigger outside hours — bypass schedule and run now
                     logger.info("Manual Run Cycle — executing outside scheduled hours")
 
-                # ── daily-trade limit ──────────────────────────────────────
-                if self.trade_count >= Config.MAX_DAILY_TRADES:
+                # ── daily-trade limit (0 = unlimited / disabled) ───────────
+                if Config.MAX_DAILY_TRADES > 0 and self.trade_count >= Config.MAX_DAILY_TRADES:
                     logger.warning(
                         f"Daily trade limit ({Config.MAX_DAILY_TRADES}) reached. "
                         f"Waiting for next session."

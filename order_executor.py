@@ -37,6 +37,7 @@ def _us_market_open() -> bool:
     return 9 * 60 + 30 <= mins < 16 * 60   # 09:30–16:00 ET
 
 HISTORY_FILE = "trade_history.json"
+TRACKED_FILE = "tracked_positions.json"   # persists SL/TP/trailing across restarts
 
 
 @dataclass
@@ -58,8 +59,9 @@ class OrderExecutor:
     def __init__(self, trading_client: Trading212Client):
         self.client = trading_client
         self.trade_history = self._load_history()
-        # symbol -> {entry_price, stop_loss, take_profit, quantity}
-        self._tracked_positions: Dict[str, Dict[str, float]] = {}
+        # symbol -> {entry_price, stop_loss, take_profit, quantity,
+        #            highest_price, trailing_active, entry_date}
+        self._tracked_positions: Dict[str, Dict[str, float]] = self._load_tracked()
 
     # ------------------------------------------------------------------
     # Public API
@@ -125,7 +127,10 @@ class OrderExecutor:
 
             # ── Risk-based quantity sizing ──────────────────────────────────
             if action == "BUY" and account_value > 0 and stop_price and entry_price > stop_price:
-                risk_dollars  = account_value * Config.RISK_PER_TRADE_PCT
+                # Bigger positions during the market-open focus window.
+                risk_pct = (Config.FOCUS_RISK_PER_TRADE_PCT
+                            if Config.in_focus_period() else Config.RISK_PER_TRADE_PCT)
+                risk_dollars  = account_value * risk_pct
                 per_share_risk = entry_price - stop_price
                 sized_qty      = max(1, int(risk_dollars / per_share_risk))
                 # Cap at MAX_POSITION_PCT of portfolio
@@ -241,16 +246,50 @@ class OrderExecutor:
         for symbol, tracking in list(self._tracked_positions.items()):
             t212_ticker = self.client._resolve_ticker(symbol)
             if t212_ticker not in current_prices:
+                # Position closed externally / no longer held — stop tracking it.
                 del self._tracked_positions[symbol]
+                self._save_tracked()
                 continue
 
             price = current_prices[t212_ticker]
+            entry = tracking["entry_price"]
             hit   = None
+            dirty = False
 
-            if price <= tracking["stop_loss"]:
-                hit = "STOP_LOSS"
-            elif price >= tracking["take_profit"]:
-                hit = "TAKE_PROFIT"
+            # ── Trailing stop: let winners run to maximum result ──────────────
+            # Track the high-water mark, then once we're up enough, trail a stop
+            # behind the high instead of capping the gain at a fixed take-profit.
+            if price > tracking.get("highest_price", entry):
+                tracking["highest_price"] = price
+                dirty = True
+
+            if Config.TRAILING_STOP_ENABLED:
+                if (not tracking.get("trailing_active")
+                        and price >= entry * (1 + Config.TRAILING_ACTIVATION_PCT)):
+                    tracking["trailing_active"] = True
+                    dirty = True
+                    logger.info(
+                        f"  {symbol}: trailing stop ACTIVATED "
+                        f"(+{Config.TRAILING_ACTIVATION_PCT:.0%}) — letting it run"
+                    )
+
+            if tracking.get("trailing_active"):
+                # Trailing stop sits TRAILING_STOP_PCT below the high, but never
+                # below the original hard stop. Take-profit is disabled so the
+                # winner can run as far as it wants.
+                trail_stop = round(tracking["highest_price"] * (1 - Config.TRAILING_STOP_PCT), 4)
+                effective_stop = max(trail_stop, tracking["stop_loss"])
+                if price <= effective_stop:
+                    hit = "TRAIL_STOP"
+            else:
+                # Pre-activation: classic fixed stop-loss / take-profit.
+                if price <= tracking["stop_loss"]:
+                    hit = "STOP_LOSS"
+                elif price >= tracking["take_profit"]:
+                    hit = "TAKE_PROFIT"
+
+            if dirty and not hit:
+                self._save_tracked()
 
             # Max-hold-days warning (log only — does not force exit)
             entry_date_str = tracking.get("entry_date")
@@ -288,12 +327,75 @@ class OrderExecutor:
                 self._save_history(result)
                 results.append(result)
                 del self._tracked_positions[symbol]
+                self._save_tracked()
 
         return results
 
     def get_tracked_positions(self) -> Dict[str, Dict[str, float]]:
         """Return a copy of the current SL/TP tracking state."""
         return dict(self._tracked_positions)
+
+    def sync_with_broker(self) -> None:
+        """
+        Rebuild tracking for any live T212 holding we're not already tracking.
+
+        The bot restarts every day when the PC powers on, which would otherwise
+        wipe all stop-loss / trailing state held in memory. This re-adopts any
+        position still open at the broker so it keeps being managed (using
+        percentage-based stops seeded from the average entry price).
+        """
+        try:
+            positions = self.client.get_positions()
+        except Exception as e:
+            logger.warning(f"sync_with_broker: could not fetch positions ({e})")
+            return
+
+        tracked_t212 = {self.client._resolve_ticker(s) for s in self._tracked_positions}
+        adopted = 0
+        for p in positions:
+            if p.instrument_code in tracked_t212:
+                continue
+            if p.quantity <= 0 or p.average_price <= 0:
+                continue
+            short = self._short_name(p.instrument_code)
+            entry = float(p.average_price)
+            cur   = float(p.current_price or entry)
+            self._tracked_positions[short] = {
+                "entry_price":     entry,
+                "stop_loss":       round(entry * (1 - Config.STOP_LOSS_PCT), 4),
+                "take_profit":     round(entry * (1 + Config.TAKE_PROFIT_PCT), 4),
+                "quantity":        float(p.quantity),
+                "entry_date":      datetime.utcnow().strftime("%Y-%m-%d"),
+                "highest_price":   max(entry, cur),
+                "trailing_active": cur >= entry * (1 + Config.TRAILING_ACTIVATION_PCT),
+            }
+            adopted += 1
+            logger.info(f"  Re-adopted {short}: entry ${entry:.2f}, qty {p.quantity}")
+        if adopted:
+            self._save_tracked()
+            logger.info(f"sync_with_broker: now managing {len(self._tracked_positions)} position(s)")
+
+    @staticmethod
+    def _short_name(instrument_code: str) -> str:
+        """'NFLX_US_EQ' -> 'NFLX'.  Pass-through if already short."""
+        return instrument_code.split("_", 1)[0] if "_" in instrument_code else instrument_code
+
+    def _load_tracked(self) -> Dict[str, Dict[str, float]]:
+        if not os.path.exists(TRACKED_FILE):
+            return {}
+        try:
+            with open(TRACKED_FILE, "r") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_tracked(self) -> None:
+        try:
+            with open(TRACKED_FILE, "w") as f:
+                json.dump(self._tracked_positions, f, indent=2)
+        except Exception:
+            pass  # best-effort; never crash the bot over a write failure
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -403,12 +505,15 @@ class OrderExecutor:
         tp = target_price or round(entry * (1 + Config.TAKE_PROFIT_PCT), 4)
 
         self._tracked_positions[symbol] = {
-            "entry_price": entry,
-            "stop_loss":   sl,
-            "take_profit": tp,
-            "quantity":    quantity,
-            "entry_date":  datetime.utcnow().strftime("%Y-%m-%d"),
+            "entry_price":     entry,
+            "stop_loss":       sl,
+            "take_profit":     tp,
+            "quantity":        quantity,
+            "entry_date":      datetime.utcnow().strftime("%Y-%m-%d"),
+            "highest_price":   entry,    # high-water mark for the trailing stop
+            "trailing_active": False,    # flips True once price clears the activation threshold
         }
+        self._save_tracked()
 
     def _execute_sell(self, symbol: str, quantity: float) -> ExecutionResult:
         try:
