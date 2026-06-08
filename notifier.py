@@ -131,13 +131,16 @@ class DiscordNotifier:
         is_demo: bool = True,
     ) -> None:
         mode_tag = "🟡 DEMO" if is_demo else "🔴 LIVE"
-        total = cash + portfolio_value
+        # portfolio_value is the FULL account equity (free cash + holdings), so it
+        # IS the total — holdings alone are total minus free cash. (Previously this
+        # added cash to the total, double-counting it.)
+        holdings = max(0.0, portfolio_value - cash)
         title = f"📊 Cycle {cycle} — Portfolio Snapshot  [{mode_tag}]"
 
         fields = [
-            {"name": "💵 Cash",          "value": f"${cash:,.2f}",           "inline": True},
-            {"name": "📦 Holdings",      "value": f"${portfolio_value:,.2f}", "inline": True},
-            {"name": "💰 Total Value",   "value": f"${total:,.2f}",           "inline": True},
+            {"name": "💵 Cash",          "value": f"${cash:,.2f}",            "inline": True},
+            {"name": "📦 Holdings",      "value": f"${holdings:,.2f}",        "inline": True},
+            {"name": "💰 Total Value",   "value": f"${portfolio_value:,.2f}", "inline": True},
             {"name": "Trades (cycle)",   "value": str(trades_this_cycle),     "inline": True},
             {"name": "Trades (total)",   "value": str(total_trades),          "inline": True},
             {"name": "Errors",           "value": str(errors),                "inline": True},

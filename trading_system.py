@@ -39,8 +39,16 @@ class TradingSystem:
         if not api_secret:
             api_secret = Config.TRADING212_API_SECRET
 
-        # Initialize components
-        self.ollama_client = OllamaClient(model_name=ollama_model)
+        # Initialize components.
+        # Wire the configured temperature/max-tokens into the decision client —
+        # previously these .env settings were ignored and the client's own
+        # defaults were used. A 512-token floor guards against the structured
+        # decision JSON being truncated on a low max-tokens setting.
+        self.ollama_client = OllamaClient(
+            model_name=ollama_model,
+            temperature=Config.OLLAMA_TEMPERATURE,
+            max_tokens=max(512, Config.OLLAMA_MAX_TOKENS),
+        )
         self.decision_engine = DecisionEngine(self.ollama_client)
         self.trading_client = Trading212Client(api_key, api_secret=api_secret, is_demo=is_demo)
         self.executor = OrderExecutor(self.trading_client)
@@ -54,6 +62,7 @@ class TradingSystem:
         context: Dict[str, Any],
         quantity: float = 1,
         account_value: float = 0,
+        free_funds: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Analyze market context and execute a swing trade if appropriate.
@@ -63,6 +72,7 @@ class TradingSystem:
             context:       Daily-bar market context from get_market_context()
             quantity:      Fallback fixed quantity (used only if risk-based sizing fails)
             account_value: Total portfolio value — used for % risk position sizing
+            free_funds:    Available cash — caps the order so it can't exceed buying power
         """
         question = (
             f"Based on this daily-bar context, should the swing trading system "
@@ -77,6 +87,7 @@ class TradingSystem:
             quantity,
             account_value=account_value,
             context=context,
+            free_funds=free_funds,
         )
 
         trade_record = {

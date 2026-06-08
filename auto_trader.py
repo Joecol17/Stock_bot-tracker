@@ -427,8 +427,15 @@ class AutoTradingBot:
                 and start_h <= candidate.hour < end_h):
             return candidate
 
-        # ── find the next trading day's opening slot ────────────────────────
-        next_day = now.replace(hour=start_h, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        # ── otherwise, the next opening slot ────────────────────────────────
+        # If it's still before today's open on a weekday, the next slot is
+        # *today's* open — not tomorrow's. (The old code always added a day,
+        # so a bot started before the window would idle until the next day.)
+        opening_today = now.replace(hour=start_h, minute=0, second=0, microsecond=0)
+        if now < opening_today and now.weekday() < 5:
+            return opening_today
+        # Past today's window (or weekend) → next weekday's open.
+        next_day = opening_today + timedelta(days=1)
         while next_day.weekday() >= 5:          # skip Sat/Sun
             next_day += timedelta(days=1)
         return next_day
@@ -546,10 +553,17 @@ class AutoTradingBot:
             # ── Step 3: LLM decision ────────────────────────────────────────
             self._write_state(4, "Ollama decide", symbol)
             self._set_sym_status(symbol, "thinking")
+            # NOTE: get_account_status() returns "portfolio_value" (full account
+            # equity), not "total_value". Using the wrong key silently forced
+            # account_value=0, which disabled risk-based sizing and made every
+            # BUY fall back to a single share. Fetch once and reuse for both the
+            # risk basis (total equity) and the affordability cap (free cash).
+            acct = self.system.get_account_status()
             result = self.system.analyze_and_trade(
                 symbol=symbol,
                 context=context,
-                account_value=self.system.get_account_status().get("total_value", 0),
+                account_value=acct.get("portfolio_value", 0),
+                free_funds=acct.get("free_funds", acct.get("cash", 0)),
             )
 
             exec_result = result["execution"]
@@ -607,19 +621,14 @@ class AutoTradingBot:
         for exit_result in exits:
             logger.info(f"  [RISK EXIT] {exit_result.message}")
             self.trade_count += 1
-            # Parse P/L % from the message for the notification
-            try:
-                pct_part = exit_result.message.split("(")[-1].rstrip(")")
-                pnl_pct = float(pct_part.replace("%", "").replace("+", ""))
-            except Exception:
-                pnl_pct = 0.0
-            tracked = self.system.get_tracked_positions().get(exit_result.symbol, {})
+            # Figures are carried on the result (the tracked position has already
+            # been removed by the time we get here, so don't re-read it).
             self.notifier.risk_exit(
                 symbol=exit_result.symbol,
                 exit_type=exit_result.action,
-                entry_price=tracked.get("entry_price", 0),
-                exit_price=tracked.get("stop_loss" if exit_result.action == "STOP_LOSS" else "take_profit", 0),
-                pnl_pct=pnl_pct,
+                entry_price=getattr(exit_result, "entry_price", 0.0),
+                exit_price=getattr(exit_result, "exit_price", 0.0),
+                pnl_pct=getattr(exit_result, "pnl_pct", 0.0),
                 is_demo=self.system.is_demo,
             )
 

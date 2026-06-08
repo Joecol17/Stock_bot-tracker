@@ -73,21 +73,63 @@ class OllamaClient:
 
     @staticmethod
     def _parse_json(raw_text: str) -> Optional[Dict[str, Any]]:
+        """Best-effort extraction of a JSON object from an LLM response.
+
+        Handles, in order: a clean object, a ```json ... ``` fenced block,
+        the first balanced {...} span anywhere in the text, and finally a
+        single-line {...}. Returns None only if nothing parses as a dict.
+        """
         if not raw_text:
             return None
 
+        text = raw_text.strip()
+
+        # Strip a Markdown code fence if the model wrapped its answer in one.
+        if text.startswith("```"):
+            inner = text[3:]
+            if inner[:4].lower() == "json":
+                inner = inner[4:]
+            text = inner.rsplit("```", 1)[0].strip()
+
+        # 1. Whole string is JSON.
         try:
-            return json.loads(raw_text)
+            obj = json.loads(text)
+            if isinstance(obj, dict):
+                return obj
         except json.JSONDecodeError:
-            # Try to find a JSON object embedded in the response text.
-            for line in raw_text.splitlines():
-                line = line.strip()
-                if line.startswith("{") and line.endswith("}"):
-                    try:
-                        return json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-            return None
+            pass
+
+        # 2. First balanced {...} span (handles pretty-printed / surrounded JSON).
+        start = text.find("{")
+        while start != -1:
+            depth = 0
+            for i in range(start, len(text)):
+                c = text[i]
+                if c == "{":
+                    depth += 1
+                elif c == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start:i + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            if isinstance(obj, dict):
+                                return obj
+                        except json.JSONDecodeError:
+                            break  # not valid — try the next '{'
+            start = text.find("{", start + 1)
+
+        # 3. Last resort: any single line that is a self-contained object.
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("{") and line.endswith("}"):
+                try:
+                    obj = json.loads(line)
+                    if isinstance(obj, dict):
+                        return obj
+                except json.JSONDecodeError:
+                    continue
+        return None
 
 
 class DecisionEngine:

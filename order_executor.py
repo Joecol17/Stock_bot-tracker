@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import time
 import logging
@@ -74,6 +75,7 @@ class OrderExecutor:
         quantity: float = 1,
         account_value: float = 0,
         context: Dict[str, Any] = None,
+        free_funds: Optional[float] = None,
     ) -> ExecutionResult:
         """
         Execute a swing trade from a DecisionEngine output dict.
@@ -125,18 +127,29 @@ class OrderExecutor:
             if target_price is None and entry_price > 0:
                 target_price = round(entry_price * (1 + Config.TAKE_PROFIT_PCT), 4)
 
-            # ── Risk-based quantity sizing ──────────────────────────────────
+            # ── Risk-based quantity sizing (fractional shares) ──────────────
+            undersized_msg = None
             if action == "BUY" and account_value > 0 and stop_price and entry_price > stop_price:
                 # Bigger positions during the market-open focus window.
                 risk_pct = (Config.FOCUS_RISK_PER_TRADE_PCT
                             if Config.in_focus_period() else Config.RISK_PER_TRADE_PCT)
-                risk_dollars  = account_value * risk_pct
+                risk_dollars   = account_value * risk_pct
                 per_share_risk = entry_price - stop_price
-                sized_qty      = max(1, int(risk_dollars / per_share_risk))
-                # Cap at MAX_POSITION_PCT of portfolio
-                max_value = account_value * Config.MAX_POSITION_PCT
-                max_qty   = max(1, int(max_value / entry_price)) if entry_price > 0 else sized_qty
-                quantity  = min(sized_qty, max_qty)
+                sized_qty      = risk_dollars / per_share_risk
+                # Cap at MAX_POSITION_PCT of total portfolio value.
+                sized_qty = min(sized_qty, (account_value * Config.MAX_POSITION_PCT) / entry_price)
+                # Never order more than free cash can afford (1% buffer for slippage/fees).
+                if free_funds is not None and free_funds > 0:
+                    sized_qty = min(sized_qty, (free_funds * 0.99) / entry_price)
+                # Round DOWN to 0.01-share granularity so we never exceed the budget.
+                quantity = math.floor(max(0.0, sized_qty) * 100) / 100
+                # Below T212's ~$1 fractional minimum → can't place a real order.
+                if quantity * entry_price < 1.0:
+                    undersized_msg = (
+                        f"HOLD — position too small to place "
+                        f"({quantity:.2f} sh ≈ ${quantity * entry_price:.2f}; "
+                        f"need ≥ $1 notional / more free cash)"
+                    )
             # else: use the fallback quantity passed in
 
             # ── Accountability metadata ─────────────────────────────────────
@@ -154,8 +167,35 @@ class OrderExecutor:
             risk_notes = inner.get("risk_notes", "")
 
             # ── Execution ──────────────────────────────────────────────────
-            if action == "BUY":
-                result = self._execute_buy(symbol, quantity, stop_price, target_price)
+            # Enforce the minimum risk:reward on new entries. The system is only
+            # meant to take setups whose target is at least MIN_RISK_REWARD × the
+            # risk; if the stop/target geometry doesn't clear that bar, hold
+            # instead of entering. (Previously MIN_RISK_REWARD was used to *suggest*
+            # an ATR target but never actually gated the trade.)
+            if action == "BUY" and undersized_msg:
+                result = ExecutionResult(
+                    success=True, symbol=symbol, action="HOLD", quantity=0,
+                    message=undersized_msg,
+                )
+            elif (action == "BUY" and risk_reward is not None
+                    and risk_reward < Config.MIN_RISK_REWARD):
+                result = ExecutionResult(
+                    success=True, symbol=symbol, action="HOLD", quantity=0,
+                    message=(f"HOLD — R:R {risk_reward:.2f} below minimum "
+                             f"{Config.MIN_RISK_REWARD:.1f} "
+                             f"(entry ${entry_price} / stop ${stop_price} / target ${target_price})"),
+                )
+            elif action == "BUY":
+                result = self._execute_buy(symbol, quantity, stop_price, target_price, entry_price)
+            elif action == "SELL" and symbol not in self._tracked_positions:
+                # We don't hold/manage this symbol, so there's nothing to sell.
+                # (Exits on held positions are handled mechanically by
+                # check_and_execute_exits, not by an LLM SELL.) Treat as a HOLD
+                # no-op instead of logging a doomed "insufficient position" order.
+                result = ExecutionResult(
+                    success=True, symbol=symbol, action="HOLD", quantity=0,
+                    message="HOLD — no tracked position to sell",
+                )
             elif action == "SELL":
                 result = self._execute_sell(symbol, quantity)
             elif action == "HOLD":
@@ -275,10 +315,12 @@ class OrderExecutor:
 
             if tracking.get("trailing_active"):
                 # Trailing stop sits TRAILING_STOP_PCT below the high, but never
-                # below the original hard stop. Take-profit is disabled so the
-                # winner can run as far as it wants.
+                # below the original hard stop — and, once trailing is active,
+                # never below the entry price either, so a position that has run
+                # +TRAILING_ACTIVATION_PCT can't come back to a loss. Take-profit
+                # is disabled so the winner can still run as far as it wants.
                 trail_stop = round(tracking["highest_price"] * (1 - Config.TRAILING_STOP_PCT), 4)
-                effective_stop = max(trail_stop, tracking["stop_loss"])
+                effective_stop = max(trail_stop, tracking["stop_loss"], entry)
                 if price <= effective_stop:
                     hit = "TRAIL_STOP"
             else:
@@ -320,6 +362,12 @@ class OrderExecutor:
                 result.action = hit
                 entry = tracking["entry_price"]
                 pct   = round((price - entry) / entry * 100, 2)
+                # Carry the figures on the result so callers don't have to scrape
+                # them out of the message (and so they survive the tracked-position
+                # delete that happens just below).
+                result.entry_price = entry
+                result.exit_price  = price
+                result.pnl_pct     = pct
                 result.message = (
                     f"{hit}: sold {tracking['quantity']} {symbol} @ ${price:.4f} "
                     f"(entry ${entry:.4f}, {pct:+.2f}%)"
@@ -440,6 +488,7 @@ class OrderExecutor:
         quantity: float,
         stop_price: Optional[float] = None,
         target_price: Optional[float] = None,
+        entry_price: float = 0.0,
     ) -> ExecutionResult:
         try:
             # T212 market-order endpoint returns 404 outside US market hours.
@@ -464,7 +513,8 @@ class OrderExecutor:
             )
             order_id = str(response.get("id") or response.get("orderId") or "")
 
-            self._register_position(symbol, quantity, stop_price, target_price)
+            self._register_position(symbol, quantity, stop_price, target_price,
+                                    expected_entry=entry_price)
             fill_price = self._tracked_positions.get(symbol, {}).get("entry_price", 0.0)
 
             return ExecutionResult(
@@ -486,19 +536,40 @@ class OrderExecutor:
         quantity: float,
         stop_price: Optional[float] = None,
         target_price: Optional[float] = None,
+        expected_entry: float = 0.0,
     ) -> None:
-        """Record entry price, SL/TP levels, and entry date for a newly bought position."""
-        time.sleep(1)
-        try:
-            positions = self.client.get_positions()
-            # T212 returns instrument_code as "NFLX_US_EQ" not "NFLX" — resolve first.
-            t212_ticker = self.client._resolve_ticker(symbol)
-            pos = next((p for p in positions if p.instrument_code == t212_ticker), None)
-            entry = float(pos.average_price) if pos else None
-        except Exception:
-            entry = None
+        """Record entry price, SL/TP levels, and entry date for a newly bought position.
+
+        Retries the position lookup a few times so a slow fill still gets its
+        stop/target attached. If the fill genuinely can't be confirmed, falls back
+        to the expected entry price so the position is never left unmanaged.
+        """
+        t212_ticker = self.client._resolve_ticker(symbol)
+        entry = None
+        for _ in range(3):
+            time.sleep(1)
+            try:
+                positions = self.client.get_positions()
+                # T212 returns instrument_code as "NFLX_US_EQ" not "NFLX".
+                pos = next((p for p in positions if p.instrument_code == t212_ticker), None)
+                if pos and float(pos.average_price) > 0:
+                    entry = float(pos.average_price)
+                    break
+            except Exception:
+                pass
 
         if not entry or entry <= 0:
+            # Couldn't confirm the fill — track using the expected entry so the
+            # stop/target still protect the position instead of it going naked.
+            entry = float(expected_entry or 0)
+            if entry > 0:
+                logger.warning(
+                    f"  {symbol}: fill not confirmed — tracking SL/TP from expected "
+                    f"entry ${entry:.4f}"
+                )
+
+        if not entry or entry <= 0:
+            logger.warning(f"  {symbol}: no entry price available — position left untracked")
             return
 
         sl = stop_price  or round(entry * (1 - Config.STOP_LOSS_PCT), 4)
