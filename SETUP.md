@@ -62,8 +62,8 @@ set OLLAMA_TEMPERATURE=0.2                  # 0.0-1.0 (lower = more deterministi
 set OLLAMA_MAX_TOKENS=256                   # Max response length
 
 # Trading Parameters
-set DEFAULT_TRADE_QUANTITY=1                # Shares per trade
-set MAX_DAILY_TRADES=10                     # Safety limit
+set DEFAULT_TRADE_QUANTITY=1                # Fallback shares per trade
+set MAX_DAILY_TRADES=0                      # 0 = unlimited (no daily cap)
 set MIN_ACCOUNT_VALUE=100                   # Minimum account value
 ```
 
@@ -171,13 +171,13 @@ success = system.cancel_order("order_id_123")
 2. ✓ Insufficient funds check before trades
 3. ✓ Position availability check for sells
 4. ✓ Trade history logging
-5. ✓ Maximum daily trades limit
+5. ✓ Risk-based position sizing with ATR & trailing stops
 6. ✓ Minimum account value threshold
 
 **Recommended Settings for Learning:**
 - Demo Mode: **ON**
 - Trade Quantity: **1 share**
-- Max Daily Trades: **5**
+- Risk Per Trade: **1%** of portfolio
 - Ollama Temperature: **0.2** (consistent decisions)
 
 ## Troubleshooting

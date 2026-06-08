@@ -134,12 +134,14 @@ Stock_bot-tracker/
 │   ├── app.jsx                ← App shell: sidebar, topbar, page router
 │   │                             Keyboard shortcuts: 1=Overview 2=Sources 3=Trades
 │   │                                                 4=AI Engine 5=Broker 6=Risk
+│   │                                                 7=Predictions 8=Logs 9=Watchlist
 │   ├── overview.jsx           ← Overview page: KPIs, pipeline, equity chart, risk
 │   ├── sources.jsx            ← Data sources page: world map, latency, sample packet
 │   ├── trades.jsx             ← Trades page: positions table, decisions list
 │   ├── ai-engine.jsx          ← Setup: Ollama model picker, temperature, max tokens
 │   ├── broker.jsx             ← Setup: API key, demo/live toggle, account stats
-│   ├── risk-config.jsx        ← Setup: SL/TP %, trade limits, discovery settings
+│   ├── risk-config.jsx        ← Setup: position sizing, ATR stops, filters, discovery
+│   ├── predictions.jsx        ← Insight: day/month/year profit forecast from equity history
 │   ├── viz.jsx                ← Reusable charts: Sparkline, AreaChart, StackedBars, Donut
 │   ├── icons.jsx              ← SVG icon components (I.Dashboard, I.Globe, etc.)
 │   └── tweaks-panel.jsx       ← Tweaks drawer: accent colour, density, activity toggle
@@ -166,11 +168,11 @@ OLLAMA_TEMPERATURE=0.2                 # 0.0–1.0 (lower = more consistent)
 OLLAMA_MAX_TOKENS=256                  # Max tokens in LLM response
 
 # ── Risk management ──────────────────────────────────────
-STOP_LOSS_PCT=0.03                     # 3% below entry → auto-sell
-TAKE_PROFIT_PCT=0.05                   # 5% above entry → auto-sell
-MAX_DAILY_TRADES=10                    # Bot stops after this many trades/day
+STOP_LOSS_PCT=0.06                     # Fallback stop if no ATR level (6% below entry)
+TAKE_PROFIT_PCT=0.12                   # Fallback target if trailing stop inactive (12%)
+MAX_DAILY_TRADES=0                     # 0 = unlimited (default); risk sizing + stops cap exposure
 MIN_ACCOUNT_VALUE=100                  # Bot halts if account drops below this
-DEFAULT_TRADE_QUANTITY=1               # Shares per order
+DEFAULT_TRADE_QUANTITY=1               # Fallback shares per order (risk sizing computes the real qty)
 
 # ── Screener & discovery ─────────────────────────────────
 MAX_SYMBOLS_PER_CYCLE=5                # Symbols analysed per bot cycle
@@ -281,7 +283,7 @@ Every 300s (configurable):
 
 ---
 
-## Setup / Config pages (sidebar keys 4–6)
+## Setup / Config & Insight pages (sidebar keys 4–7)
 
 All three pages read `.env` via `GET /api/config` on mount and write via `POST /api/config`.
 Changes take effect after restarting the bot (`.env` is loaded at startup).
@@ -290,8 +292,11 @@ Changes take effect after restarting the bot (`.env` is loaded at startup).
   temperature slider 0–1, max tokens slider 64–1024, prompt preview.
 - **Broker (5)**: API key input (masked), demo/live toggle with live-mode warning,
   account stats from live BotData, "Test connection" button hits `/api/status`.
-- **Risk & Config (6)**: Stop loss %, take profit %, max daily trades, default quantity,
-  min account value, symbols/cycle, discovery interval, top-N, max watchlist size.
+- **Risk & Config (6)**: Position sizing (risk per trade, ATR stop ×, min R:R, max position %,
+  max hold days), pre-trade filters (filter score, earnings buffer, relative strength, regime
+  benchmark, bear-market policy), fallback SL/TP %, min account value, and screener/discovery.
+- **Predictions (7)**: Day / month / year profit forecast — a linear fit of the recorded daily
+  equity curve (`equity_tracker.py`), with confidence, trend stats, and a 1-year outlook.
 
 ---
 

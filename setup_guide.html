@@ -543,9 +543,15 @@ python auto_trader.py
                         </tr>
                         <tr>
                             <td>MAX_DAILY_TRADES</td>
-                            <td>10</td>
-                            <td>Maximum trades per day</td>
-                            <td><span class="command">10</span></td>
+                            <td>0</td>
+                            <td>Max trades per day (0 = unlimited)</td>
+                            <td><span class="command">0</span></td>
+                        </tr>
+                        <tr>
+                            <td>RISK_PER_TRADE_PCT</td>
+                            <td>0.01</td>
+                            <td>Portfolio risk per trade (1%)</td>
+                            <td><span class="command">0.01</span></td>
                         </tr>
                     </tbody>
                 </table>
@@ -655,7 +661,7 @@ $env:DEFAULT_TRADE_QUANTITY = "1"
                     <ul style="margin-left: 20px; margin-top: 10px;">
                         <li>Demo Mode: <span class="command">true</span> (practice only)</li>
                         <li>Trade Quantity: <span class="command">1</span> share (start small)</li>
-                        <li>Max Daily Trades: <span class="command">5</span> (safety limit)</li>
+                        <li>Risk Per Trade: <span class="command">0.01</span> (1% of portfolio)</li>
                         <li>Temperature: <span class="command">0.2</span> (consistent decisions)</li>
                     </ul>
                 </div>

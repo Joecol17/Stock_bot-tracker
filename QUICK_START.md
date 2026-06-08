@@ -43,8 +43,8 @@ python auto_trader.py       # Continuous automated trading
 | `TRADING212_DEMO_MODE` | `true` | Use demo account |
 | `OLLAMA_MODEL` | `llama2` | Ollama model name |
 | `OLLAMA_TEMPERATURE` | `0.2` | Decision consistency |
-| `DEFAULT_TRADE_QUANTITY` | `1` | Shares per trade |
-| `MAX_DAILY_TRADES` | `10` | Safety limit |
+| `DEFAULT_TRADE_QUANTITY` | `1` | Fallback shares per trade |
+| `RISK_PER_TRADE_PCT` | `0.01` | Portfolio risk per trade (1%) |
 
 ### Setting Variables (Windows PowerShell)
 ```powershell
@@ -209,7 +209,7 @@ decision = engine.make_decision(context, question)
 ⚠️ **Risk Management**
 - Check account balance before trading
 - Validate positions before selling
-- Respect daily trade limits
+- Let risk-based sizing and ATR/trailing stops manage exposure
 
 ## Support
 

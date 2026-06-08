@@ -153,7 +153,7 @@ The URL is saved in `docs/config.js` so the GitHub Pages remote dashboard always
 
 ## GitHub Pages remote dashboard
 
-The `docs/` folder in this repo is a self-contained mobile dashboard you can host for free on GitHub Pages. It connects to your PC's Flask API through the Cloudflare tunnel and lets you view data + trigger actions from any device, anywhere.
+The `docs/` folder in this repo is a lightweight **gateway** you can host for free on GitHub Pages. It handles sign-in and Wake-on-LAN while your PC is asleep, then — once the PC is online — forwards you straight to the **full Mission Control dashboard** served over the Cloudflare tunnel. So from any device you get the same dashboard (all pages) as on localhost, anywhere. (The full dashboard is desktop-width, so on a phone you'll pinch-zoom.)
 
 ### One-time GitHub setup
 
