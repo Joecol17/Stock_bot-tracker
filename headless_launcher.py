@@ -100,7 +100,9 @@ def install_deps():
 
 def ensure_ollama():
     try:
-        result = subprocess.run(["ollama", "list"], capture_output=True, timeout=5, creationflags=NO_WINDOW)
+        # DEVNULL (not capture_output): a captured pipe can deadlock the timeout
+        # under pythonw because `ollama list` may spawn a server that holds it open.
+        result = subprocess.run(["ollama", "list"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=8, creationflags=NO_WINDOW)
         if result.returncode != 0:
             logger.info("Ollama not running — starting ollama serve…")
             subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
@@ -108,7 +110,9 @@ def ensure_ollama():
         else:
             logger.info("Ollama already running")
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        logger.warning("Ollama not found on PATH — AI decisions may fail")
+        logger.warning("Ollama not responding within timeout — continuing without it")
+    except Exception as e:
+        logger.warning(f"Ollama check failed ({e}) — continuing anyway")
 
 
 def shutdown_pc(delay_seconds: int = 120):
