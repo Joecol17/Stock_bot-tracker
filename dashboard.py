@@ -462,7 +462,6 @@ def api_botdata():
         "temperature": Config.OLLAMA_TEMPERATURE,
         "max_tokens": Config.OLLAMA_MAX_TOKENS,
         "min_account_value": Config.MIN_ACCOUNT_VALUE,
-        "max_daily_trades": Config.MAX_DAILY_TRADES,
         "cycle_interval": Config.BOT_CYCLE_INTERVAL,
         # Bot state (from bot_state.json written by auto_trader.py)
         "bot_status": "idle",
@@ -484,6 +483,7 @@ def api_botdata():
         "in_focus_period":   Config.in_focus_period(),
         "focus_window":      (f"{Config.FOCUS_START_HOUR:02d}:{Config.FOCUS_START_MIN:02d}–"
                               f"{Config.FOCUS_END_HOUR:02d}:{Config.FOCUS_END_MIN:02d}"),
+        "focus_cycles_per_hour": Config.FOCUS_CYCLES_PER_HOUR,
         # Swing-trading config surfaced to the dashboard
         "risk_per_trade_pct":  Config.RISK_PER_TRADE_PCT,
         "atr_stop_multiplier": Config.ATR_STOP_MULTIPLIER,
@@ -827,7 +827,7 @@ _EDITABLE_KEYS = {
     # Broker
     "TRADING212_DEMO_MODE",
     # Core risk
-    "MAX_DAILY_TRADES", "MIN_ACCOUNT_VALUE",
+    "MIN_ACCOUNT_VALUE",
     "STOP_LOSS_PCT", "TAKE_PROFIT_PCT",
     # Swing position sizing
     "RISK_PER_TRADE_PCT", "ATR_STOP_MULTIPLIER", "MIN_RISK_REWARD",

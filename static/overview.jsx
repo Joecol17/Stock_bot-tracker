@@ -37,7 +37,20 @@ const OverviewPage = ({ tweaks }) => {
   const sells      = D.decisions.filter(d => d.action === "SELL").length;
   const holds      = D.decisions.filter(d => d.action === "HOLD").length;
   const equityVals = D.equity.map(p => p.v);
-  const maxDaily   = D.max_daily_trades || 10;
+
+  // Cycle cadence — schedule-driven, with market-open overdrive
+  const cadence = () => {
+    if (D.in_focus_period) {
+      const m = Math.max(1, Math.round(60 / (D.focus_cycles_per_hour || 12)));
+      return `⚡ overdrive · every ${m} min`;
+    }
+    if (D.schedule_enabled) {
+      const m = Math.max(1, Math.round(60 / (D.cycles_per_hour || 3)));
+      return `every ${m} min${D.trading_hours ? " · " + D.trading_hours : ""}`;
+    }
+    const ci = D.cycle_interval || 86400;
+    return ci >= 3600 ? `every ${Math.round(ci / 3600)}h` : `every ${Math.round(ci / 60)} min`;
+  };
 
   // Max position concentration
   const maxPos    = D.positions.length ? D.positions.reduce((a, b) => b.value > a.value ? b : a) : null;
@@ -178,7 +191,7 @@ const OverviewPage = ({ tweaks }) => {
         </div>
         <div className="kpi">
           <span className="kpi-label">Decisions today</span>
-          <span className="kpi-value mono">{totalDec}<span className="unit">  /  {maxDaily} limit</span></span>
+          <span className="kpi-value mono">{totalDec}<span className="unit">  logged</span></span>
           <span className="kpi-delta">
             <span style={{color:"var(--pos)"}}>BUY {buys}</span> &nbsp;
             <span style={{color:"var(--neg)"}}>SELL {sells}</span> &nbsp;
@@ -213,9 +226,7 @@ const OverviewPage = ({ tweaks }) => {
               : `idle · cycle #${D.cycle || 0}`}
           </span>
           <span className="meta">
-            {(D.cycle_interval||86400) >= 3600
-              ? `every ${Math.round((D.cycle_interval||86400)/3600)}h`
-              : `every ${Math.round((D.cycle_interval||86400)/60)} min`}
+            {cadence()}
             {" · last @ "}{lastCycleTime}
           </span>
         </div>
@@ -337,10 +348,10 @@ const OverviewPage = ({ tweaks }) => {
           </div>
           <div className="card-body" style={{ display:"flex", flexDirection:"column", gap: 14 }}>
             <RiskRow
-              label="Daily trade limit"
-              value={`${totalDec} / ${maxDaily}`}
-              pct={totalDec / maxDaily}
-              tone={totalDec / maxDaily > 0.8 ? "warn" : "info"}
+              label="Risk per trade"
+              value={`${((D.risk_per_trade_pct||0.01)*100).toFixed(1)}% of portfolio`}
+              pct={Math.min(1, (D.risk_per_trade_pct||0.01) / 0.05)}
+              tone={(D.risk_per_trade_pct||0.01) > 0.02 ? "warn" : "info"}
             />
             <RiskRow
               label="Free funds"

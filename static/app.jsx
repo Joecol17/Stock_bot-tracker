@@ -78,7 +78,7 @@ const App = () => {
 
   // Keyboard shortcuts 1-7
   useEffectA(() => {
-    const PAGES = { "1": "overview", "2": "sources", "3": "trades", "4": "ai-engine", "5": "broker", "6": "risk", "7": "logs", "8": "watchlist" };
+    const PAGES = { "1": "overview", "2": "sources", "3": "trades", "4": "ai-engine", "5": "broker", "6": "risk", "7": "predictions", "8": "logs", "9": "watchlist" };
     const handler = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       if (PAGES[e.key]) setPage(PAGES[e.key]);
@@ -138,11 +138,14 @@ const App = () => {
         <NavItem icon={<I.Server/>}     active={page === "broker"}     onClick={() => setPage("broker")}     kbd="5">Broker</NavItem>
         <NavItem icon={<I.Settings/>}   active={page === "risk"}       onClick={() => setPage("risk")}       kbd="6">Risk & config</NavItem>
 
+        <div className="nav-section">Insight</div>
+        <NavItem icon={<I.Chart/>}      active={page === "predictions"} onClick={() => setPage("predictions")} kbd="7">Predictions</NavItem>
+
         <div className="nav-section">Debug</div>
-        <NavItem icon={<I.Refresh/>}    active={page === "logs"}       onClick={() => setPage("logs")}       kbd="7">Live logs</NavItem>
+        <NavItem icon={<I.Refresh/>}    active={page === "logs"}       onClick={() => setPage("logs")}       kbd="8">Live logs</NavItem>
 
         <div className="nav-section">Trading</div>
-        <NavItem icon={<I.Globe/>}      active={page === "watchlist"}  onClick={() => setPage("watchlist")}  kbd="8">Watchlist</NavItem>
+        <NavItem icon={<I.Globe/>}      active={page === "watchlist"}  onClick={() => setPage("watchlist")}  kbd="9">Watchlist</NavItem>
 
         <div className="side-foot">
           <div className="bot-status">
@@ -258,6 +261,7 @@ const App = () => {
         {page === "ai-engine" && <ErrorBoundary key="ai-engine"><AiEnginePage/></ErrorBoundary>}
         {page === "broker"    && <ErrorBoundary key="broker"><BrokerPage/></ErrorBoundary>}
         {page === "risk"      && <ErrorBoundary key="risk"><RiskConfigPage/></ErrorBoundary>}
+        {page === "predictions" && <ErrorBoundary key={`pred-${tick}`}><PredictionsPage/></ErrorBoundary>}
         {page === "logs"      && <ErrorBoundary key="logs"><LogsPage/></ErrorBoundary>}
         {page === "watchlist" && <ErrorBoundary key="watchlist"><WatchlistPage/></ErrorBoundary>}
       </main>
@@ -376,6 +380,7 @@ const pageTitle = (p) => ({
   "ai-engine":"AI engine",
   broker:     "Broker",
   risk:       "Risk & config",
+  predictions:"Predictions",
   logs:       "Live logs",
   watchlist:  "Watchlist",
 }[p] || "Overview");

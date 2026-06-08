@@ -299,9 +299,10 @@ const SamplePacket = ({ kind }) => {
   );
   return (
     <>
-      <span className="k-key">MAX_DAILY_TRADES</span> = <span className="k-num">{D.max_daily_trades || 10}</span>{"\n"}
-      <span className="k-key">MIN_ACCOUNT_VALUE</span> = <span className="k-num">{D.min_account_value || 100}</span>{"\n"}
-      <span className="k-key">STOP_LOSS_PCT</span> = <span className="k-num">0.03</span>{"\n"}
+      <span className="k-key">RISK_PER_TRADE_PCT</span> = <span className="k-num">{D.risk_per_trade_pct ?? 0.01}</span>{"\n"}
+      <span className="k-key">ATR_STOP_MULTIPLIER</span> = <span className="k-num">{D.atr_stop_multiplier ?? 1.5}</span>{"\n"}
+      <span className="k-key">MIN_RISK_REWARD</span> = <span className="k-num">{D.min_risk_reward ?? 2.0}</span>{"\n"}
+      <span className="k-key">MAX_HOLD_DAYS</span> = <span className="k-num">{D.max_hold_days ?? 10}</span>{"\n"}
       <span className="k-key">TRADING212_DEMO_MODE</span> = <span className="k-num">{D.mode === "LIVE" ? "false" : "true"}</span>
     </>
   );
