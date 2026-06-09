@@ -98,7 +98,34 @@ class Config:
     # ── Discovery ─────────────────────────────────────────────────────────────
     DISCOVERY_INTERVAL_CYCLES: int = int(os.getenv("DISCOVERY_INTERVAL_CYCLES", "7"))  # weekly discovery
     DISCOVERY_TOP_N: int           = int(os.getenv("DISCOVERY_TOP_N", "10"))
-    MAX_WATCHLIST_SIZE: int        = int(os.getenv("MAX_WATCHLIST_SIZE", "20"))
+    MAX_WATCHLIST_SIZE: int        = int(os.getenv("MAX_WATCHLIST_SIZE", "250"))
+
+    # ── Core / Explore watchlist model ────────────────────────────────────────
+    # 200 permanently-tracked "core" symbols + up to 50 dynamic "explore" slots
+    # that the discovery swarm fills with its best fresh finds.
+    CORE_WATCHLIST_SIZE: int = int(os.getenv("CORE_WATCHLIST_SIZE", "200"))
+    EXPLORE_SLOTS: int       = int(os.getenv("EXPLORE_SLOTS", "50"))
+
+    # ── Discovery agent swarm ─────────────────────────────────────────────────
+    AGENT_DB_PATH: str = os.getenv("AGENT_DB_PATH", "agent_activity.db")
+
+    # ── LLM concurrency (parallel decisions) ──────────────────────────────────
+    # The RTX 4060 (8GB) fits ~4 concurrent llama3.2 (1.9GB) requests. Decisions
+    # for the bounded candidate set are dispatched via a thread pool; order
+    # execution stays serial. OLLAMA_NUM_PARALLEL must match in the launcher.
+    LLM_MAX_WORKERS: int     = int(os.getenv("LLM_MAX_WORKERS", "4"))
+    OLLAMA_NUM_PARALLEL: int = int(os.getenv("OLLAMA_NUM_PARALLEL", "4"))
+
+    # ── Night-shift AI controller (runs after market close, off the cycle) ────
+    # Captures all daily data to journal.db, files a daily dossier, and a nightly
+    # controller reviews performance + the codebase (READ-ONLY) to suggest
+    # features/improvements and clamped parameter changes. Advisory by default.
+    JOURNAL_DB_PATH: str       = os.getenv("JOURNAL_DB_PATH", "journal.db")
+    REPORTS_DIR: str           = os.getenv("REPORTS_DIR", "reports")
+    NIGHTLY_ANALYSIS_HOUR: int = int(os.getenv("NIGHTLY_ANALYSIS_HOUR", "22"))   # local hour, after 21:00 close
+    CONTROLLER_MODEL: str      = os.getenv("CONTROLLER_MODEL", "0xroyce/plutus:latest")
+    CONTROLLER_AUTO_APPLY: bool = os.getenv("CONTROLLER_AUTO_APPLY", "false").lower() == "true"
+    CONTROLLER_LOOKBACK_DAYS: int = int(os.getenv("CONTROLLER_LOOKBACK_DAYS", "14"))
 
     @classmethod
     def in_focus_period(cls) -> bool:
@@ -121,6 +148,67 @@ class Config:
             print("Warning: TRADING212_API_KEY not set.")
             return False
         return True
+
+    # Keys the dashboard Setup/Risk pages can edit — kept in sync with
+    # dashboard.py's _EDITABLE_KEYS so they can be reloaded live.
+    _RELOADABLE = (
+        "OLLAMA_MODEL", "OLLAMA_TEMPERATURE", "OLLAMA_MAX_TOKENS",
+        "TRADING212_DEMO_MODE", "MIN_ACCOUNT_VALUE",
+        "STOP_LOSS_PCT", "TAKE_PROFIT_PCT", "RISK_PER_TRADE_PCT",
+        "ATR_STOP_MULTIPLIER", "MIN_RISK_REWARD", "MAX_POSITION_PCT", "MAX_HOLD_DAYS",
+        "EARNINGS_BUFFER_DAYS", "MIN_RELATIVE_STRENGTH", "MIN_FILTER_SCORE",
+        "REGIME_STRICT", "MARKET_REGIME_SYMBOL", "BOT_CYCLE_INTERVAL",
+        "MAX_SYMBOLS_PER_CYCLE", "DISCOVERY_INTERVAL_CYCLES",
+        "DISCOVERY_TOP_N", "MAX_WATCHLIST_SIZE",
+        "CORE_WATCHLIST_SIZE", "EXPLORE_SLOTS", "LLM_MAX_WORKERS",
+    )
+
+    @classmethod
+    def reload(cls) -> dict:
+        """Re-read the user-editable settings from .env at runtime.
+
+        Lets changes saved on the dashboard Setup/Risk pages take effect on the
+        next bot cycle without a full restart. Returns a dict of {key: (old, new)}
+        for any values that actually changed (empty if nothing changed).
+        """
+        before = {k: getattr(cls, k) for k in cls._RELOADABLE}
+        load_dotenv(override=True)
+        g = os.getenv
+        # Model
+        cls.OLLAMA_MODEL        = g("OLLAMA_MODEL", "llama2")
+        cls.OLLAMA_TEMPERATURE  = float(g("OLLAMA_TEMPERATURE", "0.2"))
+        cls.OLLAMA_MAX_TOKENS   = int(g("OLLAMA_MAX_TOKENS", "256"))
+        # Broker
+        cls.TRADING212_DEMO_MODE = g("TRADING212_DEMO_MODE", "true").lower() == "true"
+        # Core risk
+        cls.MIN_ACCOUNT_VALUE   = float(g("MIN_ACCOUNT_VALUE", "100"))
+        cls.STOP_LOSS_PCT       = float(g("STOP_LOSS_PCT", "0.06"))
+        cls.TAKE_PROFIT_PCT     = float(g("TAKE_PROFIT_PCT", "0.12"))
+        # Swing position sizing
+        cls.RISK_PER_TRADE_PCT  = float(g("RISK_PER_TRADE_PCT", "0.01"))
+        cls.ATR_STOP_MULTIPLIER = float(g("ATR_STOP_MULTIPLIER", "1.5"))
+        cls.MIN_RISK_REWARD     = float(g("MIN_RISK_REWARD", "2.0"))
+        cls.MAX_POSITION_PCT    = float(g("MAX_POSITION_PCT", "0.10"))
+        cls.MAX_HOLD_DAYS       = int(g("MAX_HOLD_DAYS", "10"))
+        # Swing filters
+        cls.EARNINGS_BUFFER_DAYS  = int(g("EARNINGS_BUFFER_DAYS", "5"))
+        cls.MIN_RELATIVE_STRENGTH = float(g("MIN_RELATIVE_STRENGTH", "0.95"))
+        cls.MIN_FILTER_SCORE      = int(g("MIN_FILTER_SCORE", "2"))
+        cls.REGIME_STRICT         = g("REGIME_STRICT", "false").lower() == "true"
+        cls.MARKET_REGIME_SYMBOL  = g("MARKET_REGIME_SYMBOL", "SPY")
+        # Cycle
+        cls.BOT_CYCLE_INTERVAL    = int(g("BOT_CYCLE_INTERVAL", "86400"))
+        # Screener / discovery
+        cls.MAX_SYMBOLS_PER_CYCLE     = int(g("MAX_SYMBOLS_PER_CYCLE", "5"))
+        cls.DISCOVERY_INTERVAL_CYCLES = int(g("DISCOVERY_INTERVAL_CYCLES", "7"))
+        cls.DISCOVERY_TOP_N           = int(g("DISCOVERY_TOP_N", "10"))
+        cls.MAX_WATCHLIST_SIZE        = int(g("MAX_WATCHLIST_SIZE", "250"))
+        # Core / explore + LLM concurrency
+        cls.CORE_WATCHLIST_SIZE       = int(g("CORE_WATCHLIST_SIZE", "200"))
+        cls.EXPLORE_SLOTS             = int(g("EXPLORE_SLOTS", "50"))
+        cls.LLM_MAX_WORKERS           = int(g("LLM_MAX_WORKERS", "4"))
+        after = {k: getattr(cls, k) for k in cls._RELOADABLE}
+        return {k: (before[k], after[k]) for k in cls._RELOADABLE if before[k] != after[k]}
 
     @classmethod
     def print_config(cls) -> None:

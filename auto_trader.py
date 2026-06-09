@@ -6,6 +6,8 @@ Uses Ollama for decision-making and Trading 212 API for execution.
 import json
 import time
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from trading_system import TradingSystem
@@ -14,6 +16,8 @@ from discovery import StockDiscovery
 from notifier import DiscordNotifier
 from swing_filters import run_all_filters, get_market_regime
 from equity_tracker import record_snapshot
+from agent_swarm import Swarm, AgentLogger
+from journal import DayJournal
 from config import Config
 
 
@@ -239,11 +243,27 @@ class AutoTradingBot:
             discovery=Config.DISCORD_WEBHOOK_DISCOVERY,
             alerts=Config.DISCORD_WEBHOOK_ALERTS,
         )
+        # Discovery agent swarm — Scout/Analyst/Risk Officer/Curator manage the
+        # explore tier of the watchlist and log their activity to SQLite.
+        self.agent_log = AgentLogger()
+        self.swarm = Swarm(
+            watchlist=self.watchlist,
+            screener=self.screener,
+            market_context_fn=get_market_context,
+            activity_logger=self.agent_log,
+            notifier=self.notifier,
+        )
+        # Records every cycle (incl. HOLD/filtered decisions) for the nightly controller.
+        self.journal = DayJournal()
+        self._last_nightly_day = None   # date string of the last nightly analysis run
         self.interval = interval_seconds
         self.is_running = False
         self.trade_count = 0
         self.error_count = 0
         self._cycle_count = 0
+        # Guards the JSON status files (symbol_queue/bot_state) when the decide
+        # phase runs symbols in parallel threads.
+        self._io_lock = threading.Lock()
         self._started_at = datetime.now().isoformat()
         # Ensure a clean control file at startup
         self._write_control({"paused": False, "run_cycle_now": False})
@@ -332,23 +352,26 @@ class AutoTradingBot:
           disabled      → turned off by user from the dashboard
           not_queued    → watchlist symbol not selected by screener this cycle
         """
-        try:
-            with open(_QUEUE_FILE, "r") as f:
-                data = json.load(f)
-        except Exception:
-            data = {"cycle": self._cycle_count, "symbols": {}, "updated": ""}
+        # Locked: the decide phase may update many symbols from parallel threads,
+        # and this is a read-modify-write of the whole queue file.
+        with self._io_lock:
+            try:
+                with open(_QUEUE_FILE, "r") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {"cycle": self._cycle_count, "symbols": {}, "updated": ""}
 
-        data["symbols"][symbol] = {
-            "status":  status,
-            "detail":  detail,
-            "updated": datetime.now().isoformat(),
-        }
-        data["updated"] = datetime.now().isoformat()
-        try:
-            with open(_QUEUE_FILE, "w") as f:
-                json.dump(data, f)
-        except Exception:
-            pass
+            data["symbols"][symbol] = {
+                "status":  status,
+                "detail":  detail,
+                "updated": datetime.now().isoformat(),
+            }
+            data["updated"] = datetime.now().isoformat()
+            try:
+                with open(_QUEUE_FILE, "w") as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
 
     def _read_prefs(self) -> Dict[str, Any]:
         """Read symbol_prefs.json. Returns {} if missing."""
@@ -362,6 +385,41 @@ class AutoTradingBot:
         """Return False if the user disabled this symbol from the dashboard."""
         prefs = self._read_prefs()
         return prefs.get(symbol, {}).get("enabled", True)
+
+    # ------------------------------------------------------------------
+    # Night-shift analysis (daily dossier + AI controller) — runs after
+    # market close, in a background thread, so it never slows a cycle.
+    # ------------------------------------------------------------------
+    def _maybe_run_nightly(self) -> None:
+        try:
+            now = datetime.now()
+            today = now.strftime("%Y-%m-%d")
+            if self._last_nightly_day == today:
+                return
+            if now.hour < getattr(Config, "NIGHTLY_ANALYSIS_HOUR", 22):
+                return
+            if self._is_trading_time():
+                return
+            self._last_nightly_day = today
+            threading.Thread(target=self._run_nightly, args=(today,), daemon=True).start()
+            logger.info("Night-shift analysis started (daily dossier + AI controller)")
+        except Exception as e:
+            logger.warning(f"Nightly scheduling check failed: {e}")
+
+    def _run_nightly(self, day: str) -> None:
+        try:
+            from daily_report import generate_daily_report
+            from controller import run_controller
+            generate_daily_report(day)
+            rec = run_controller(day)   # advisory unless CONTROLLER_AUTO_APPLY=true
+            logger.info(
+                f"Night-shift done — {len(rec.get('feature_ideas', []))} feature ideas, "
+                f"{len(rec.get('improvements', []))} improvements, "
+                f"{len(rec.get('param_proposals', []))} param proposals, "
+                f"applied={rec.get('applied')}"
+            )
+        except Exception as e:
+            logger.error(f"Night-shift analysis failed: {e}")
 
     # ------------------------------------------------------------------
     # Bot control helpers (dashboard → bot_control.json → here)
@@ -465,33 +523,33 @@ class AutoTradingBot:
         return False           # <-- timed out normally
 
     def analyze_symbol(self, symbol: str, regime: Optional[Dict[str, Any]] = None) -> bool:
-        """
-        Analyse one symbol for a swing trade opportunity.
-        Returns True if a trade was executed.
+        """Analyse one symbol end-to-end (decide then execute). Returns True if traded."""
+        prepared = self._decide_symbol(symbol, regime)
+        if not prepared:
+            return False
+        return self._execute_symbol(prepared)
 
-        Flow:
-          1. Fetch daily-bar market context
-          2. Run pre-trade swing filters (regime / earnings / RS / setup score)
-          3. Only proceed to LLM if filter_score >= MIN_FILTER_SCORE
-          4. LLM returns action + stop/target prices + expected hold days
-          5. Execute with risk-based position sizing
+    def _decide_symbol(self, symbol: str, regime: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """READ-ONLY stage (safe to run in parallel threads): fetch context, run
+        the swing filters, and get the LLM decision. Returns a prepared dict
+        {symbol, context, decision} to execute, or None to skip this symbol.
+
+        Flow: context -> filters (>= MIN_FILTER_SCORE) -> LLM decision.
+        No orders are placed here — see _execute_symbol for the cash-mutating step.
         """
         try:
             logger.info(f"--- {symbol} ---")
 
-            # Check user-disabled flag before doing any work
             if not self._is_symbol_enabled(symbol):
                 logger.info(f"  {symbol}: disabled by user — skipping")
                 self._set_sym_status(symbol, "disabled")
-                return False
+                return None
 
-            # Already holding it? Don't let the LLM churn it every cycle — the
-            # stop-loss / trailing-stop / take-profit manage the exit so the
-            # position can run to its maximum result.
+            # Already holding it? Don't churn it — trailing stop manages the exit.
             if Config.HOLD_THROUGH_LLM and symbol in self.system.get_tracked_positions():
                 logger.info(f"  {symbol}: holding — managed by trailing stop, skipping LLM")
                 self._set_sym_status(symbol, "hold", "holding — trailing stop active")
-                return False
+                return None
 
             self._set_sym_status(symbol, "filtering")
             context = get_market_context(symbol)
@@ -499,9 +557,9 @@ class AutoTradingBot:
             if context.get("price", 0) == 0:
                 logger.warning(f"  {symbol}: no price data — skipping")
                 self._set_sym_status(symbol, "skipped", "no price data")
-                return False
+                return None
 
-            # ── Step 2: pre-trade swing filters ────────────────────────────
+            # ── pre-trade swing filters ────────────────────────────────────
             filter_result = run_all_filters(
                 symbol=symbol,
                 context=context,
@@ -526,20 +584,17 @@ class AutoTradingBot:
                 f"=> score {f_score}/4"
             )
 
-            # Hard block: earnings imminent
             if skip_reason:
                 logger.info(f"  SKIP: {skip_reason}")
                 self._set_sym_status(symbol, "filtered_out", skip_reason)
-                return False
+                return None
 
-            # Soft block: too few filters pass
             if f_score < Config.MIN_FILTER_SCORE:
                 msg = f"only {f_score}/4 filters passed (min {Config.MIN_FILTER_SCORE})"
                 logger.info(f"  SKIP: {msg} — not a quality setup")
                 self._set_sym_status(symbol, "filtered_out", msg)
-                return False
+                return None
 
-            # Attach filter summary to context so the LLM sees it
             context["pre_trade_filters"] = {
                 "filter_score":     f_score,
                 "filter_max":       4,
@@ -550,25 +605,45 @@ class AutoTradingBot:
                 "days_to_earnings": f_earn.get("days_to_earnings"),
             }
 
-            # ── Step 3: LLM decision ────────────────────────────────────────
-            self._write_state(4, "Ollama decide", symbol)
+            # ── LLM decision (the slow part — parallelised across symbols) ──
             self._set_sym_status(symbol, "thinking")
-            # NOTE: get_account_status() returns "portfolio_value" (full account
-            # equity), not "total_value". Using the wrong key silently forced
-            # account_value=0, which disabled risk-based sizing and made every
-            # BUY fall back to a single share. Fetch once and reuse for both the
-            # risk basis (total equity) and the affordability cap (free cash).
+            decision = self.system.decide(symbol, context)
+            return {"symbol": symbol, "context": context, "decision": decision}
+
+        except Exception as e:
+            logger.error(f"Error analyzing {symbol}: {e}")
+            self._set_sym_status(symbol, "error", str(e))
+            with self._io_lock:
+                self.error_count += 1
+            try:
+                self.notifier.error(str(e), context=f"Symbol: {symbol}")
+            except Exception:
+                pass
+            return None
+
+    def _execute_symbol(self, prepared: Dict[str, Any]) -> bool:
+        """SERIAL stage (cash-aware, single-threaded): size and place the order for
+        a prepared decision, then log / notify. Returns True if a trade executed.
+
+        free_funds is re-fetched here so each order in the cycle sees the cash that
+        prior orders already spent.
+        """
+        symbol  = prepared["symbol"]
+        context = prepared["context"]
+        decision = prepared["decision"]
+        try:
+            self._write_state(5, "Execute order", symbol)
             acct = self.system.get_account_status()
-            result = self.system.analyze_and_trade(
+            result = self.system.execute_prepared(
                 symbol=symbol,
                 context=context,
+                decision=decision,
                 account_value=acct.get("portfolio_value", 0),
                 free_funds=acct.get("free_funds", acct.get("cash", 0)),
             )
 
             exec_result = result["execution"]
             action = exec_result["action"]
-            self._write_state(5, "Execute order", symbol)
 
             decision_inner = result.get("decision", {}).get("decision", {})
             reasoning_text = decision_inner.get("reasoning") if isinstance(decision_inner, dict) else None
@@ -582,7 +657,10 @@ class AutoTradingBot:
                     f"conf={exec_result.get('confidence', 0):.0%} "
                     f"— {exec_result['message']}"
                 )
-                self._set_sym_status(symbol, "traded", f"{action} — {exec_result['message']}")
+                traded_detail = f"{action} — {exec_result['message']}"
+                if reasoning_text:
+                    traded_detail += f"  ·  why: {reasoning_text}"
+                self._set_sym_status(symbol, "traded", traded_detail)
                 self.trade_count += 1
                 self.notifier.trade_executed(
                     symbol=symbol,
@@ -596,7 +674,10 @@ class AutoTradingBot:
                 return True
             elif exec_result["success"]:
                 logger.info(f"  {symbol}: HOLD — {exec_result['message']}")
-                self._set_sym_status(symbol, "hold", exec_result["message"])
+                hold_detail = exec_result["message"]
+                if reasoning_text:
+                    hold_detail += f"  ·  why: {reasoning_text}"
+                self._set_sym_status(symbol, "hold", hold_detail)
                 return False
             else:
                 logger.warning(f"  {symbol}: blocked — {exec_result['message']}")
@@ -604,16 +685,26 @@ class AutoTradingBot:
                 return False
 
         except Exception as e:
-            logger.error(f"Error analyzing {symbol}: {e}")
+            logger.error(f"Error executing {symbol}: {e}")
             self._set_sym_status(symbol, "error", str(e))
-            self.error_count += 1
-            self.notifier.error(str(e), context=f"Symbol: {symbol}")
+            with self._io_lock:
+                self.error_count += 1
             return False
 
     def run_cycle(self) -> int:
         """Run one analysis pass over all symbols. Returns number of trades executed."""
         logger.info("=" * 60)
         logger.info(f"Cycle started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Pick up any settings changed on the dashboard since the last cycle.
+        # The Setup/Risk pages write .env; this applies them live (no restart).
+        try:
+            changed = Config.reload()
+            if changed:
+                summary = ", ".join(f"{k} {o}->{n}" for k, (o, n) in changed.items())
+                logger.info(f"Config reloaded from .env — {summary}")
+        except Exception as e:
+            logger.warning(f"Config reload failed: {e}")
 
         # Check stop-loss / take-profit before analysing new signals
         self._write_state(1, "Risk exits")
@@ -632,18 +723,18 @@ class AutoTradingBot:
                 is_demo=self.system.is_demo,
             )
 
-        # Periodically discover new stocks and auto-add to watchlist
+        # Periodically run the discovery agent swarm to refresh the explore tier
         self._cycle_count += 1
         if self._cycle_count % Config.DISCOVERY_INTERVAL_CYCLES == 1:
-            logger.info("Running stock discovery...")
-            added = self.discovery.auto_populate_watchlist(
-                self.watchlist,
-                top_n=Config.DISCOVERY_TOP_N,
-                max_watchlist_size=Config.MAX_WATCHLIST_SIZE,
-            )
-            if added:
-                logger.info(f"Discovery added to watchlist: {', '.join(added)}")
-                self.notifier.discovery_update(added, len(self.watchlist.list_symbols()))
+            logger.info("Running discovery agent swarm (Scout -> Analyst -> Risk -> Curator)...")
+            try:
+                summary = self.swarm.run(cycle=self._cycle_count)
+                if summary.get("added"):
+                    logger.info(f"Swarm added to explore tier: {', '.join(summary['added'])}")
+                if summary.get("evicted"):
+                    logger.info(f"Swarm rotated out: {', '.join(summary['evicted'])}")
+            except Exception as e:
+                logger.warning(f"Discovery swarm failed: {e}")
 
         # Fetch market regime once for the whole cycle (cached 1h in swing_filters)
         regime = get_market_regime(Config.MARKET_REGIME_SYMBOL)
@@ -677,11 +768,29 @@ class AutoTradingBot:
                 self._set_sym_status(sym, "not_queued", "screener ranked out")
 
         trades_this_cycle = len(exits)
-        for symbol in symbols:
-            self._write_state(3, "Fetch context", symbol)
-            if self.analyze_symbol(symbol, regime=regime):
-                trades_this_cycle += 1
-            time.sleep(2)  # small gap between symbols
+        workers = max(1, getattr(Config, "LLM_MAX_WORKERS", 1))
+        if workers > 1 and len(symbols) > 1:
+            # Phase A — DECIDE in parallel. Fetch context + filters + LLM decision
+            # for every symbol concurrently (the LLM is the bottleneck and this
+            # stage places no orders, so it's safe to thread).
+            self._write_state(4, "Ollama decide", f"{len(symbols)} symbols · {workers}x parallel")
+            prepared: List[Dict[str, Any]] = []
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for p in pool.map(lambda s: self._decide_symbol(s, regime), symbols):
+                    if p:
+                        prepared.append(p)
+            # Phase B — EXECUTE serially. Order placement is cash-aware and must
+            # stay single-threaded; free_funds is re-fetched per order.
+            for p in prepared:
+                if self._execute_symbol(p):
+                    trades_this_cycle += 1
+                time.sleep(1)
+        else:
+            for symbol in symbols:
+                self._write_state(3, "Fetch context", symbol)
+                if self.analyze_symbol(symbol, regime=regime):
+                    trades_this_cycle += 1
+                time.sleep(2)  # small gap between symbols
 
         account = self.system.get_account_status()
         if "error" not in account:
@@ -702,6 +811,21 @@ class AutoTradingBot:
                 errors=self.error_count,
                 is_demo=self.system.is_demo,
             )
+
+        # Persist the full cycle (incl. HOLD / filtered decisions) for night analysis.
+        try:
+            self.journal.record_cycle(
+                cycle=self._cycle_count,
+                regime=regime_label,
+                account=account if isinstance(account, dict) and "error" not in account else {},
+                selected=symbols,
+                trades=trades_this_cycle,
+                errors=self.error_count,
+                in_focus=focus,
+                n_screened=len(all_symbols),
+            )
+        except Exception as e:
+            logger.warning(f"Journal record failed: {e}")
 
         self._write_state(0, "idle")
         logger.info(
@@ -764,7 +888,12 @@ class AutoTradingBot:
                         f"'Run Cycle' button will trigger immediately"
                     )
                     self._write_state(0, "standby", status="standby")
-                    triggered = self._interruptible_sleep(wait_secs)
+                    # Off-cycle night-shift: file the daily dossier + run the AI
+                    # controller once per day after market close (background thread).
+                    self._maybe_run_nightly()
+                    # Cap the standby sleep so we wake to check the nightly hour
+                    # (and re-evaluate trading hours) at most ~30 min later.
+                    triggered = self._interruptible_sleep(min(wait_secs, 1800))
                     if not triggered:
                         # Normal timeout — loop back to re-check trading hours
                         continue

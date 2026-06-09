@@ -56,31 +56,28 @@ class TradingSystem:
         self.is_demo = is_demo
         self.trade_log = []
 
-    def analyze_and_trade(
-        self,
-        symbol: str,
-        context: Dict[str, Any],
-        quantity: float = 1,
-        account_value: float = 0,
-        free_funds: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """
-        Analyze market context and execute a swing trade if appropriate.
-
-        Args:
-            symbol:        Stock symbol
-            context:       Daily-bar market context from get_market_context()
-            quantity:      Fallback fixed quantity (used only if risk-based sizing fails)
-            account_value: Total portfolio value — used for % risk position sizing
-            free_funds:    Available cash — caps the order so it can't exceed buying power
-        """
+    def decide(self, symbol: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """LLM decision only — READ-ONLY, no order placement. Safe to run in
+        parallel across symbols (the LLM call is the slow part)."""
         question = (
             f"Based on this daily-bar context, should the swing trading system "
             f"BUY, SELL, or HOLD {symbol}? "
             f"If BUY or SELL, provide exact stop_loss_price and take_profit_price."
         )
-        decision = self.decision_engine.make_decision(context, question)
+        return self.decision_engine.make_decision(context, question)
 
+    def execute_prepared(
+        self,
+        symbol: str,
+        context: Dict[str, Any],
+        decision: Dict[str, Any],
+        quantity: float = 1,
+        account_value: float = 0,
+        free_funds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Place the order for an already-made decision. MUTATES cash/positions —
+        must be called serially (single-threaded) so position sizing stays
+        cash-aware. Pass FRESH free_funds (re-fetched at execution time)."""
         execution = self.executor.execute_decision(
             decision,
             symbol,
@@ -112,6 +109,21 @@ class TradingSystem:
             "decision":  decision,
             "execution": trade_record["execution"],
         }
+
+    def analyze_and_trade(
+        self,
+        symbol: str,
+        context: Dict[str, Any],
+        quantity: float = 1,
+        account_value: float = 0,
+        free_funds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Decide then execute in one call (back-compat / single-symbol use)."""
+        decision = self.decide(symbol, context)
+        return self.execute_prepared(
+            symbol, context, decision,
+            quantity=quantity, account_value=account_value, free_funds=free_funds,
+        )
 
     def get_account_status(self) -> Dict[str, Any]:
         """Get current account status and positions."""

@@ -133,6 +133,20 @@ const SymbolCard = ({ symbol, cycleStatus, enabled, onToggle, onRemove, onAnalyz
         </div>
       </div>
 
+      {/* ── why: this cycle's reason (filter / hold / trade), shown inline ── */}
+      {cycleStatus && cycleStatus.detail && (
+        <div style={{
+          fontSize:10.5, fontFamily:"var(--mono)", lineHeight:1.55,
+          color:"var(--text-mute)", background:"var(--bg)",
+          border:"1px solid var(--border-soft)", borderRadius:5, padding:"6px 9px",
+        }}>
+          <span style={{ color:(STATUS_META[cycleStatus.status]||{}).color || "var(--text-dim)" }}>
+            {(STATUS_META[cycleStatus.status]||{}).icon || "·"} {(STATUS_META[cycleStatus.status]||{}).label || cycleStatus.status}
+          </span>
+          {" — "}{cycleStatus.detail}
+        </div>
+      )}
+
       {/* ── metrics row ── */}
       {hasData && (
         <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>

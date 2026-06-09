@@ -314,6 +314,79 @@ def api_watchlist_prefs_set():
         return jsonify({"error": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# API — discovery agent swarm (Scout / Analyst / Risk Officer / Curator)
+# ---------------------------------------------------------------------------
+def _get_agent_logger():
+    from agent_swarm import AgentLogger
+    return AgentLogger(Config.AGENT_DB_PATH)
+
+
+@app.route("/api/agents/state")
+def api_agents_state():
+    """Current status of all 4 agents (always returns all 4, idle if no data)."""
+    from agent_swarm import AGENTS, AGENT_ROLES
+    try:
+        states = {s["agent"]: s for s in _get_agent_logger().states()}
+    except Exception:
+        states = {}
+    out = []
+    for name in AGENTS:
+        st = states.get(name, {})
+        out.append({
+            "agent":        name,
+            "role":         AGENT_ROLES.get(name, ""),
+            "status":       st.get("status", "idle"),
+            "current_task": st.get("current_task", "waiting for next discovery scan"),
+            "last_action":  st.get("last_action", ""),
+            "processed":    st.get("processed", 0),
+            "updated":      st.get("updated", ""),
+        })
+    return jsonify(out)
+
+
+@app.route("/api/agents/activity")
+def api_agents_activity():
+    try:
+        limit = int(request.args.get("limit", 80))
+    except (TypeError, ValueError):
+        limit = 80
+    try:
+        return jsonify(_get_agent_logger().recent(max(1, min(limit, 500))))
+    except Exception:
+        return jsonify([])
+
+
+@app.route("/api/agents/explore")
+def api_agents_explore():
+    wl = _get_watchlist()
+    try:
+        explore = wl.explore_meta()
+    except Exception:
+        explore = []
+    return jsonify({
+        "explore":       explore,
+        "core_count":    len(wl.core_symbols()),
+        "explore_count": len(explore),
+        "explore_slots": getattr(Config, "EXPLORE_SLOTS", 50),
+        "slots_free":    wl.explore_slots_free(),
+        "total":         len(wl.list_symbols()),
+    })
+
+
+@app.route("/api/controller/report")
+def api_controller_report():
+    """Latest night-shift AI controller review (advisory feedback + param proposals)."""
+    path = os.path.join(getattr(Config, "REPORTS_DIR", "reports"), "controller_latest.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    except FileNotFoundError:
+        return jsonify({"available": False, "summary": "No controller review yet — runs after market close."})
+    except Exception as e:
+        return jsonify({"available": False, "error": str(e)})
+
+
 @app.route("/api/watchlist/analyze", methods=["POST"])
 def api_watchlist_analyze():
     """
@@ -552,13 +625,16 @@ def api_botdata():
 
             today_str = datetime.now().strftime("%Y-%m-%d")
             for pos in account.get("positions", []):
-                symbol = pos.get("symbol", "")
-                t      = tracked.get(symbol, {})
-                entry  = t.get("entry_price") or pos.get("avg_price", 0) or 0
+                raw_symbol = pos.get("symbol", "")
+                symbol = raw_symbol.split("_")[0] if raw_symbol else raw_symbol  # XOM_US_EQ -> XOM
+                t      = tracked.get(symbol) or tracked.get(raw_symbol) or {}
                 price  = pos.get("current_price", 0) or 0
                 qty    = pos.get("quantity", 0) or 0
-                value  = pos.get("value", price * qty) or 0
+                entry  = t.get("entry_price") or pos.get("average_price", 0) or 0
+                # T212's portfolio API omits position "value"; fall back to price * qty.
+                value  = pos.get("value") or (price * qty) or 0
                 pl     = pos.get("profit_loss", 0) or 0
+                # Per-position % = the instrument's price move (entry vs current, same currency).
                 pl_pct = ((price - entry) / entry * 100) if entry else 0
                 trend  = "uptrend" if pl_pct > 1 else "downtrend" if pl_pct < -1 else "neutral"
                 # Days held — from entry_date recorded at buy time
@@ -840,6 +916,8 @@ _EDITABLE_KEYS = {
     # Screener / discovery
     "MAX_SYMBOLS_PER_CYCLE", "DISCOVERY_INTERVAL_CYCLES",
     "DISCOVERY_TOP_N", "MAX_WATCHLIST_SIZE",
+    # Core / explore + LLM concurrency
+    "CORE_WATCHLIST_SIZE", "EXPLORE_SLOTS", "LLM_MAX_WORKERS",
 }
 
 # Keys that may be set but should be masked in the response

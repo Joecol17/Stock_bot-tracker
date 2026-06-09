@@ -99,6 +99,12 @@ def install_deps():
 
 
 def ensure_ollama():
+    # Allow concurrent LLM requests so the bot can decide several symbols in
+    # parallel (RTX 4060 8GB fits ~4 concurrent llama3.2). Inherited by the
+    # `ollama serve` we may spawn below. If Ollama is already running it must be
+    # restarted for this to take effect.
+    os.environ["OLLAMA_NUM_PARALLEL"] = os.getenv("OLLAMA_NUM_PARALLEL", "4")
+    os.environ.setdefault("OLLAMA_MAX_LOADED_MODELS", "2")
     try:
         # DEVNULL (not capture_output): a captured pipe can deadlock the timeout
         # under pythonw because `ollama list` may spawn a server that holds it open.

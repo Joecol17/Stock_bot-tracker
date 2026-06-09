@@ -28,9 +28,13 @@ const OverviewPage = ({ tweaks }) => {
     if (D.uptime_seconds > 0) setUptime(D.uptime_seconds);
   }, [D.uptime_seconds]);
 
-  const totalValue = D.positions.reduce((s, p) => s + p.value, 0);
+  // Per-position values are USD (price×qty); the account total is in account currency.
+  // Use holdingsValue only for currency-neutral ratios (concentration); use the
+  // authoritative account equity (total_value) for the headline portfolio number.
+  const holdingsValue = D.positions.reduce((s, p) => s + p.value, 0);
+  const totalValue = D.total_value || holdingsValue;
   const totalPL    = D.positions.reduce((s, p) => s + p.pl, 0);
-  const totalPLPct = totalValue - totalPL !== 0 ? (totalPL / (totalValue - totalPL)) * 100 : 0;
+  const totalPLPct = (totalValue - totalPL) !== 0 ? (totalPL / (totalValue - totalPL)) * 100 : 0;
   const filled     = D.decisions.filter(d => d.status === "filled").length;
   const totalDec   = D.decisions.length;
   const buys       = D.decisions.filter(d => d.action === "BUY").length;
@@ -54,7 +58,7 @@ const OverviewPage = ({ tweaks }) => {
 
   // Max position concentration
   const maxPos    = D.positions.length ? D.positions.reduce((a, b) => b.value > a.value ? b : a) : null;
-  const maxPosPct = totalValue > 0 && maxPos ? maxPos.value / totalValue : 0;
+  const maxPosPct = holdingsValue > 0 && maxPos ? maxPos.value / holdingsValue : 0;
 
   // Order failure rate
   const failedDec  = D.decisions.filter(d => d.status === "blocked").length;

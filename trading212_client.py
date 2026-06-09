@@ -238,7 +238,10 @@ class Trading212Client:
                     quantity=float(self._get(pos, "quantity", default=0)),
                     average_price=float(self._get(pos, "averagePrice", default=0)),
                     current_price=float(self._get(pos, "currentPrice", default=0)),
-                    value=float(self._get(pos, "value", default=0)),
+                    value=float(self._get(pos, "value", default=0)) or (
+                        float(self._get(pos, "currentPrice", default=0))
+                        * float(self._get(pos, "quantity", default=0))
+                    ),
                     profit_loss=float(self._get(pos, "ppl", "profitLoss", "fxPpl", default=0)),
                 )
             )

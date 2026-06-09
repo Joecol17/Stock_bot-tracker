@@ -51,6 +51,34 @@ BUILTIN_UNIVERSE = [
     "FCX", "NEM", "NUE", "ALB",
     # ETFs (high liquidity, useful signals)
     "SPY", "QQQ", "IWM", "XLK", "XLF", "XLE", "XLV", "XLI",
+    # ── Expanded universe — more liquid S&P 500 large/mid caps by sector ───────
+    # Tech / Communications
+    "CSCO", "IBM", "ACN", "DELL", "HPQ", "HPE", "WDC", "STX", "ON", "MCHP",
+    "GLW", "JNPR", "ANET", "KEYS", "TEL", "APH", "CTSH", "ANSS", "ROP", "PTC",
+    "AKAM", "GEN", "FFIV", "ZBRA", "TDY", "T", "VZ", "TMUS",
+    # Consumer
+    "KO", "PEP", "PG", "CL", "KMB", "MDLZ", "MNST", "KDP", "STZ", "KHC",
+    "GIS", "K", "HSY", "SYY", "KR", "DG", "DLTR", "EL", "CLX", "CHD",
+    "DECK", "EBAY", "RH", "BBY", "DPZ", "DRI", "MAR", "HLT", "BKNG", "ABNB",
+    "EXPE", "RCL", "CCL", "NCLH", "F", "GM", "APTV", "LVS", "WYNN", "MGM", "ORLY", "AZO",
+    # Finance
+    "SPGI", "MCO", "ICE", "CME", "MSCI", "AON", "MMC", "AJG", "TRV", "ALL",
+    "PGR", "AIG", "MET", "PRU", "AFL", "TROW", "STT", "BK", "FITB", "HBAN",
+    "RF", "KEY", "CFG", "MTB", "DFS", "SYF",
+    # Healthcare
+    "CI", "CVS", "HUM", "CNC", "ELV", "ZTS", "BDX", "BAX", "HCA", "DXCM",
+    "RMD", "A", "IQV", "MRNA", "GEHC", "WST", "ALGN", "CAH", "MCK", "COR",
+    # Industrials
+    "UNP", "ODFL", "JBHT", "EXPD", "WM", "RSG", "PH", "ITW", "ROK", "DOV",
+    "AME", "CMI", "PCAR", "CARR", "OTIS", "JCI", "TT", "IR", "FAST", "GWW",
+    "URI", "PWR", "LII", "PNR", "XYL",
+    # Energy / Materials
+    "WMB", "KMI", "OKE", "LNG", "DVN", "FANG", "HES", "TRGP", "CTRA",
+    "LIN", "APD", "SHW", "ECL", "DD", "DOW", "PPG", "CF", "MOS", "VMC", "MLM", "STLD",
+    # Utilities
+    "NEE", "DUK", "SO", "D", "AEP", "EXC", "SRE", "XEL", "PEG", "ED", "WEC", "AEE",
+    # REITs
+    "PLD", "AMT", "EQIX", "CCI", "PSA", "O", "SPG", "WELL", "VICI", "DLR",
 ]
 
 # Deduplicate while preserving order

@@ -250,6 +250,7 @@ class OrderExecutor:
                     {
                         "symbol": p.instrument_code,
                         "quantity": p.quantity,
+                        "average_price": p.average_price,
                         "current_price": p.current_price,
                         "value": p.value,
                         "profit_loss": p.profit_loss,
@@ -359,6 +360,16 @@ class OrderExecutor:
                         "will retry next cycle"
                     )
                     continue
+                if not result.success:
+                    # Real failure (e.g. the position was closed externally) — do
+                    # NOT fabricate a fill or log a phantom price-0 exit. Just stop
+                    # tracking so we don't keep chasing a position we can't sell.
+                    logger.warning(
+                        f"  {symbol}: {hit} exit failed — {result.message}; untracking"
+                    )
+                    del self._tracked_positions[symbol]
+                    self._save_tracked()
+                    continue
                 result.action = hit
                 entry = tracking["entry_price"]
                 pct   = round((price - entry) / entry * 100, 2)
@@ -368,6 +379,8 @@ class OrderExecutor:
                 result.entry_price = entry
                 result.exit_price  = price
                 result.pnl_pct     = pct
+                if not result.price:
+                    result.price = price   # ensure the exit fill price is recorded
                 result.message = (
                     f"{hit}: sold {tracking['quantity']} {symbol} @ ${price:.4f} "
                     f"(entry ${entry:.4f}, {pct:+.2f}%)"
@@ -493,7 +506,7 @@ class OrderExecutor:
         try:
             # T212 market-order endpoint returns 404 outside US market hours.
             if not _us_market_open():
-                logger.info(f"  {symbol}: market closed — BUY queued until next market open")
+                logger.info(f"  {symbol}: market closed — BUY not placed (re-evaluated when the market opens)")
                 return ExecutionResult(
                     success=False, symbol=symbol, action="BUY", quantity=quantity,
                     message="Market closed — order not placed (US market hours: 9:30–16:00 ET)",

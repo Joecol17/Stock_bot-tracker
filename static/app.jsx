@@ -59,6 +59,10 @@ const App = () => {
   const [tick, setTick]       = useStateA(0);
   const [paused, setPaused]   = useStateA(false);
   const [cycling, setCycling] = useStateA(false);
+  const [navOpen, setNavOpen] = useStateA(false);   // mobile sidebar drawer
+
+  // Close the mobile drawer whenever the page changes (nav click or 1–9 keys)
+  useEffectA(() => { setNavOpen(false); }, [page]);
 
   // Re-render all pages when live data refreshes; sync pause state from server
   useEffectA(() => {
@@ -78,7 +82,7 @@ const App = () => {
 
   // Keyboard shortcuts 1-7
   useEffectA(() => {
-    const PAGES = { "1": "overview", "2": "sources", "3": "trades", "4": "ai-engine", "5": "broker", "6": "risk", "7": "predictions", "8": "logs", "9": "watchlist" };
+    const PAGES = { "1": "overview", "2": "sources", "3": "trades", "4": "ai-engine", "5": "broker", "6": "risk", "7": "predictions", "8": "logs", "9": "watchlist", "0": "discovery" };
     const handler = (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
       if (PAGES[e.key]) setPage(PAGES[e.key]);
@@ -119,7 +123,8 @@ const App = () => {
 
   return (
     <div className="app">
-      <aside className="sidebar">
+      {navOpen && <div className="nav-overlay" onClick={() => setNavOpen(false)} />}
+      <aside className={`sidebar${navOpen ? " open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">⌬</div>
           <div className="brand-text">
@@ -146,6 +151,9 @@ const App = () => {
 
         <div className="nav-section">Trading</div>
         <NavItem icon={<I.Globe/>}      active={page === "watchlist"}  onClick={() => setPage("watchlist")}  kbd="9">Watchlist</NavItem>
+
+        <div className="nav-section">Discovery</div>
+        <NavItem icon={<I.Search/>}     active={page === "discovery"}  onClick={() => setPage("discovery")}  kbd="0">Agents</NavItem>
 
         <div className="side-foot">
           <div className="bot-status">
@@ -218,6 +226,7 @@ const App = () => {
 
       <main className="main">
         <div className="topbar">
+          <button className="nav-toggle" aria-label="Open menu" onClick={() => setNavOpen(true)}>☰</button>
           <div className="crumb">
             STOCK_BOT  <span style={{ margin:"0 8px", color:"var(--text-dim)" }}>›</span>  <b>{pageTitle(page)}</b>
           </div>
@@ -264,6 +273,7 @@ const App = () => {
         {page === "predictions" && <ErrorBoundary key={`pred-${tick}`}><PredictionsPage/></ErrorBoundary>}
         {page === "logs"      && <ErrorBoundary key="logs"><LogsPage/></ErrorBoundary>}
         {page === "watchlist" && <ErrorBoundary key="watchlist"><WatchlistPage/></ErrorBoundary>}
+        {page === "discovery" && <ErrorBoundary key="discovery"><DiscoveryAgentsPage/></ErrorBoundary>}
       </main>
 
       <TweaksPanel title="Tweaks">
@@ -383,6 +393,7 @@ const pageTitle = (p) => ({
   predictions:"Predictions",
   logs:       "Live logs",
   watchlist:  "Watchlist",
+  discovery:  "Discovery agents",
 }[p] || "Overview");
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
